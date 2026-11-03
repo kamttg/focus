@@ -24,6 +24,9 @@ export interface RuntimeState {
   cache: Record<string, CacheEntry>; backoffUntil: number; failures: number;
   lastLatencyMs: number;
   monitoringReason: MonitoringReason | null;
+  focusSignals?: { window: boolean; page: boolean | null; visible: boolean | null };
+  lastAnalysisAt?: number;
+  lastError?: string;
 }
 export const initialState = (): RuntimeState => ({
   session: null, clock: { lastAt: Date.now(), offTopicMs: 0, totalOffTopicMs: 0, cooldownUntil: 0, snoozeUntil: 0 },

@@ -24,3 +24,20 @@ it.each([
 it('propaga falha de provedor para fallback seguro no endpoint', async () => {
  await expect(new OpenAIProvider(env, vi.fn().mockResolvedValue(new Response('', { status: 429 }))).classify(input)).rejects.toThrow();
 });
+it.each([
+ [401, '', 'provider_auth'], [403, '', 'provider_access'], [404, '', 'provider_model'],
+ [429, 'insufficient_quota', 'provider_quota'], [429, 'rate_limit_exceeded', 'provider_rate_limit'],
+ [400, '', 'provider_configuration'], [503, '', 'provider_unavailable']
+])('classifica HTTP %s com código seguro, sem revelar a resposta bruta', async (status, code, expected) => {
+ const transport = vi.fn().mockResolvedValue(Response.json({ error: { code, message: 'SEGREDO_DO_PROVEDOR' } }, { status: status as number }));
+ try { await new OpenAIProvider(env, transport).classify(input); throw new Error('Expected rejection'); }
+ catch (error) {
+  expect((error as { code: string }).code).toBe(expected);
+  expect(String(error)).not.toContain('SEGREDO_DO_PROVEDOR');
+ }
+});
+it('reserva tokens também para reasoning quando o nível low está configurado', async () => {
+ const transport = vi.fn().mockResolvedValue(Response.json({ status: 'incomplete', output: [] }));
+ await expect(new OpenAIProvider(env, transport).classify(input)).rejects.toThrow();
+ expect(JSON.parse(transport.mock.calls[0]![1].body).max_output_tokens).toBe(1500);
+});

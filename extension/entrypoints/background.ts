@@ -1,5 +1,7 @@
 import { isTrustedUI } from '../lib/message-security';
 import { readBrowserEnvironment } from '../lib/browser-environment';
+import { probePageFocus } from '../lib/page-focus';
+import { safeAnalysisError } from '../../shared/analysis-errors';
 import { defaults, initialState, hashContext, cached, type RuntimeState, type Preferences } from '../lib/session';
 import { accrue, resetContinuous, shouldAlert } from '../lib/decision-engine';
 import { allowedPage, originPattern, validEndpoint } from '../lib/privacy';
@@ -26,8 +28,8 @@ export default defineBackground(() => {
   async function stopObserver(tabId = state.tabId) {
     if (tabId !== null) await chrome.tabs.sendMessage(tabId, { type: 'FIO_STOP' }).catch(() => {});
   }
-  async function clearOverlay(tabId = state.tabId) {
-    if (tabId !== null) await chrome.scripting.executeScript({ target: { tabId }, func: removeOverlay }).catch(() => {});
+  async function clearOverlay(tabId = state.tabId, includePreview = false) {
+    if (tabId !== null) await chrome.scripting.executeScript({ target: { tabId }, func: removeOverlay, args: [includePreview] }).catch(() => {});
   }
   async function finish() {
     tick(); invalidate(); cancelRequests(); clearTimeout(stabilityTimer);
@@ -35,13 +37,13 @@ export default defineBackground(() => {
     if (state.session) { state.session.status = 'finished'; state.session.feedback = {}; }
     state.cache = {}; state.status = 'finished'; state.url = ''; state.domain = '';
     state.clock = resetContinuous(state.clock, Date.now());
-    await chrome.notifications.clear('fio-reminder'); await clearOverlay(); await save();
+    await chrome.notifications.clear('fio-reminder'); await clearOverlay(state.tabId, true); await save();
   }
   async function pause() {
     tick(); invalidate(); cancelRequests();
     if (state.session?.status === 'active') { state.session.status = 'paused'; state.session.pausedAt = Date.now(); }
     state.status = 'paused'; clearTimeout(stabilityTimer);
-    await chrome.alarms.clear('fio-stable'); await stopObserver(); await clearOverlay(); await save();
+    await chrome.alarms.clear('fio-stable'); await stopObserver(); await clearOverlay(state.tabId, true); await save();
   }
   async function remind() {
     const s = state.session;
@@ -66,9 +68,14 @@ export default defineBackground(() => {
       await chrome.permissions.contains({ origins: [originPattern(url)] });
   }
   async function syncEnvironment() {
-    const environment = await readBrowserEnvironment(chrome);
+    const environment = await readBrowserEnvironment(chrome, async tab => {
+      if (!active() || tab.id === undefined || !(await eligible(tab.url || ''))) return null;
+      const results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: probePageFocus });
+      return results[0]?.result || null;
+    });
     state.focused = environment.focused;
     state.idle = environment.idle;
+    state.focusSignals = { window: environment.windowFocused, page: environment.pageFocused, visible: environment.pageVisible };
     return environment.tab;
   }
   async function schedule() {
@@ -84,6 +91,7 @@ export default defineBackground(() => {
     state.monitoringReason = null;
     await stopObserver(); await clearOverlay();
     if (!active() || !prefs.consent) {
+      if (!prefs.consent) await clearOverlay(state.tabId, true);
       state.tabId = null; state.url = ''; state.domain = ''; state.focused = false; state.idle = false;
       state.status = active() ? 'not_monitored' : (state.session?.status || 'inactive');
       state.monitoringReason = active() && !prefs.consent ? 'consent_required' : null;
@@ -109,13 +117,14 @@ export default defineBackground(() => {
     }
     await save(); await schedule();
   }
-  async function accept(result: Classification, revision: number, key: string, latency: number) {
+  async function accept(result: Classification, revision: number, key: string, latency: number, errorMessage = '') {
     if (revision !== state.revision || !active()) return;
     const tab = await syncEnvironment();
     if (tab?.id !== state.tabId || tab?.url !== state.url || state.idle || !state.focused || !(await eligible(state.url))) {
       await observe(); return;
     }
     tick();
+    state.lastError = errorMessage;
     const feedback = state.session?.feedback[state.domain];
     state.classification = feedback === 'relevant' ? { label: 'relevant', confidence: 1, reason: 'Você indicou que este site faz parte da tarefa.' } : result;
     state.status = feedback === 'ignored' ? 'not_monitored' : state.classification.label;
@@ -127,6 +136,7 @@ export default defineBackground(() => {
       state.cache[key] = { result, expiresAt: Date.now() + 10 * 60_000 };
     }
     state.clock.lastAt = Date.now(); state.lastLatencyMs = latency;
+    state.lastAnalysisAt = Date.now();
     await save(); await remind();
   }
   async function analyze() {
@@ -158,10 +168,11 @@ export default defineBackground(() => {
     const pending = inFlight.get(flightKey);
     if (pending) {
       state.status = 'analyzing'; await save();
-      void pending.promise.then(result => run(() => accept(result, revision, key, 0))).catch(() => run(async () => {
+      void pending.promise.then(result => run(() => accept(result, revision, key, 0))).catch(error => run(async () => {
         if (revision !== state.revision || !active()) return;
         state.failures++; state.backoffUntil = Date.now() + Math.min(300_000, 30_000 * 2 ** Math.min(4, state.failures - 1));
-        await accept(uncertain(), revision, '', 0);
+        state.lastError = safeAnalysisError(error).message;
+        await accept(uncertain(state.lastError), revision, '', 0, state.lastError);
       }));
       return;
     }
@@ -171,7 +182,7 @@ export default defineBackground(() => {
     if (count >= prefs.dailyLimit || s.analyses >= prefs.sessionLimit || Date.now() < state.backoffUntil) {
       state.classification = uncertain('Limite de análises ou pausa de rede. Tente novamente mais tarde.'); state.status = 'uncertain'; await save(); return;
     }
-    tick(); state.classification = null; state.status = 'analyzing'; s.analyses++;
+    tick(); state.classification = null; state.status = 'analyzing'; state.lastError = ''; s.analyses++;
     await chrome.storage.local.set({ usage: { day, count: count + 1 } }); await save();
     const started = Date.now();
     // A chamada externa não bloqueia a fila de pausa/foco/revogação.
@@ -181,10 +192,11 @@ export default defineBackground(() => {
     void promise.then(result => run(async () => {
       if (revision === state.revision) { state.failures = 0; state.backoffUntil = 0; }
       await accept(result, revision, key, Date.now() - started);
-    })).catch(() => run(async () => {
+    })).catch(error => run(async () => {
       if (revision !== state.revision || !active()) return;
       state.failures++; state.backoffUntil = Date.now() + Math.min(300_000, 30_000 * 2 ** Math.min(4, state.failures - 1));
-      await accept(uncertain(), revision, '', Date.now() - started);
+      state.lastError = safeAnalysisError(error).message;
+      await accept(uncertain(state.lastError), revision, '', Date.now() - started, state.lastError);
     })).finally(() => { if (inFlight.get(flightKey) === flight) inFlight.delete(flightKey); });
   }
   async function feedback(choice: string) {
@@ -222,7 +234,7 @@ export default defineBackground(() => {
       const trustedUI = isTrustedUI(sender, chrome.runtime.id);
       const content = sender.tab?.id === state.tabId && sender.id === chrome.runtime.id &&
         sender.url === state.url && (sender.frameId ?? 0) === 0;
-      if (message.type === 'DIRTY' && content) { await observe(); return { ok: true }; }
+      if ((message.type === 'DIRTY' || message.type === 'PAGE_FOCUS_CHANGED') && content) { await observe(); return { ok: true }; }
       if (message.type === 'FEEDBACK' && (trustedUI || content)) { await feedback(message.choice); return { ok: true }; }
       if (!trustedUI) throw new Error('Ação não autorizada.');
       switch (message.type) {
@@ -264,6 +276,13 @@ export default defineBackground(() => {
           } return { ok: true };
         case 'FINISH': await finish(); return { ok: true };
         case 'RETRY': await observe(); return { ok: true };
+        case 'PREVIEW_REMINDER': {
+          const tab = (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+          if (!tab?.id || tab.incognito || !(await eligible(tab.url || ''))) throw new Error('Autorize esta página pública e confirme o consentimento antes de testar o aviso.');
+          await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: showOverlay,
+            args: [state.session?.goal || 'Seu objetivo', 'Esta prévia não consulta a IA e não altera a classificação.', false, true] });
+          return { ok: true };
+        }
         case 'CLEAR_FEEDBACK':
           if (state.session) state.session.feedback = {};
           await observe(); return { ok: true };

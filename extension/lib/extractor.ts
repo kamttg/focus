@@ -1,7 +1,7 @@
 // Esta função é serializada por chrome.scripting: não pode depender de imports.
 export function extractPageContext() {
   const root = document.documentElement;
-  const sensitive = 'input,textarea,select,button,form,[contenteditable]:not([contenteditable="false"]),[hidden],[aria-hidden="true"],[role="textbox"],[role="log"],[role="dialog"],[data-private],.private,.message,.messages,.chat,.comment,.comments,#comments,nav,footer,aside,script,style,noscript';
+  const sensitive = '#__fio_overlay,#__fio_preview,input,textarea,select,button,form,[contenteditable]:not([contenteditable="false"]),[hidden],[aria-hidden="true"],[role="textbox"],[role="log"],[role="dialog"],[data-private],.private,.message,.messages,.chat,.comment,.comments,#comments,nav,footer,aside,script,style,noscript';
   if (document.querySelector('input[type="password"],input[autocomplete="cc-number"],input[autocomplete="current-password"]'))
     return null;
   const visible = (el: Element) => {

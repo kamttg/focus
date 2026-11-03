@@ -11,17 +11,24 @@ export interface BrowserEnvironmentAPI {
   idle: { queryState(seconds: number): Promise<string> };
 }
 
-export async function readBrowserEnvironment(api: BrowserEnvironmentAPI) {
+export interface PageFocus { focused: boolean; visible: boolean }
+
+export async function readBrowserEnvironment(api: BrowserEnvironmentAPI, readPageFocus?: (tab: ActiveTab) => Promise<PageFocus | null>) {
   // Select the tab as the popup does. Do not infer its window from getAll()
   // or require a particular window type (e.g. an installed app/popup window).
   const tabs = await api.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
   const tab = tabs[0];
-  if (!tab || tab.incognito) return { tab: null, focused: false, idle: false };
+  if (!tab || tab.incognito) return { tab: null, focused: false, idle: false, windowFocused: false, pageFocused: null, pageVisible: null };
   const [window, activity] = await Promise.all([
     api.windows.get(tab.windowId).catch(() => null),
     api.idle.queryState(60).catch(() => 'locked')
   ]);
-  // Keep the selected tab for the UI when Chrome loses focus, but do not
-  // collect, classify, or count time until its actual window is focused.
-  return { tab, focused: window?.focused === true && window.state !== 'minimized', idle: activity !== 'active' };
+  const windowFocused = window?.focused === true && window.state !== 'minimized';
+  let page: PageFocus | null = null;
+  if (window?.state !== 'minimized' && readPageFocus) page = await readPageFocus(tab).catch(() => null);
+  // In an authorized page, the isolated world's document.hasFocus() and
+  // visibilityState are independent of Chrome's sometimes stale window flag.
+  // A visible tab alone never proves activity. Minimized windows never count.
+  const focused = window?.state === 'minimized' ? false : page ? page.focused && page.visible : windowFocused;
+  return { tab, focused, idle: activity !== 'active', windowFocused, pageFocused: page?.focused ?? null, pageVisible: page?.visible ?? null };
 }

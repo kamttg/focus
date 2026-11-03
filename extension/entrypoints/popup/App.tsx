@@ -45,6 +45,8 @@ export default function App() {
   const running = s && s.status !== 'finished';
   const monitoring = snapshot?.state.status === 'not_monitored' && snapshot.state.monitoringReason
     ? monitoringMessages[snapshot.state.monitoringReason] : null;
+  const previousResult = !!(snapshot?.state.classification && snapshot.state.status === 'not_monitored' &&
+    ['window_unfocused', 'idle'].includes(snapshot.state.monitoringReason || ''));
   return <main className="w-[390px] p-6"><Brand />
     {error && <p role="alert" className="mb-4 rounded-xl border border-amber-400 p-3 text-sm">{error}</p>}
     {!snapshot ? <p role="status">Abrindo o Fio…</p> : running ? <>
@@ -52,9 +54,11 @@ export default function App() {
       <h1>{s.goal}</h1><p className="hint mb-5">{s.topics.join(' · ') || 'Uma tarefa de cada vez.'}</p>
       <section className="card" aria-live="polite">
         <span className="text-xs uppercase tracking-wide text-leaf">{s.status === 'paused' ? 'Pausado' : s.endsAt ? 'Sessão com duração fixa' : 'Duração indefinida'}</span>
-        <h2 className="mt-2">{monitoring?.title || statuses[snapshot.state.status] || snapshot.state.status}</h2>
+        <h2 className="mt-2">{previousResult ? statuses[snapshot.state.classification!.label] : monitoring?.title || statuses[snapshot.state.status] || snapshot.state.status}</h2>
         <p className="text-sm break-all">{snapshot.state.domain || 'Escolha uma página para continuar.'}</p>
-        <p className="hint mt-3">{monitoring?.description || snapshot.state.classification?.reason || 'A leitura depende da sua autorização. Uma avaliação incerta não gera alerta.'}</p>
+        <p className="hint mt-3">{previousResult ? snapshot.state.classification!.reason : monitoring?.description || snapshot.state.classification?.reason || 'A leitura depende da sua autorização. Uma avaliação incerta não gera alerta.'}</p>
+        {previousResult && <p className="hint mt-2">Última avaliação recebida. Leitura pausada agora: {snapshot.state.monitoringReason === 'idle' ? 'sistema inativo' : 'a página está sem foco, por exemplo enquanto este popup está aberto'}.</p>}
+        {snapshot.state.lastError && snapshot.state.lastError !== snapshot.state.classification?.reason && <p role="alert" className="mt-3 text-sm border-l-2 border-amber-500 pl-3">{snapshot.state.lastError}</p>}
         <div className="mt-4 border-t pt-3 flex justify-between text-xs">
           <span>Possível desvio contínuo</span><span>{Math.floor(snapshot.state.clock.offTopicMs / 60000)} min</span>
         </div>
@@ -64,6 +68,8 @@ export default function App() {
       <Button secondary disabled={busy} onClick={() => void perform(() => rpc('FINISH'))}>Encerrar sessão</Button></div>
       {snapshot.state.status === 'not_monitored' && snapshot.state.monitoringReason === 'permission_required' && <Button secondary disabled={busy} onClick={() => void perform(authorize)}>Autorizar site atual</Button>}
       {snapshot.state.status === 'not_monitored' && <Button secondary disabled={busy} onClick={() => void perform(() => rpc('RETRY'))}>Verificar página novamente</Button>}
+      <div className="mt-3"><Button secondary disabled={busy} onClick={() => void perform(() => rpc('PREVIEW_REMINDER'))}>Testar aviso (sem IA)</Button>
+        <p className="hint mt-2">Depois de clicar, feche este popup para ver a prévia na página. Ela não altera a classificação nem o intervalo de silêncio.</p></div>
       {snapshot.state.classification && <div className="flex flex-wrap gap-2 mt-4">
         {([['Faz parte da tarefa', 'relevant'], ['Adiar', 'snooze'], ['Ignorar site', 'ignore'], ['Voltar ao foco', 'return']] as const).filter(([, choice]) => choice !== 'return' || s.focusTabId !== null).map(([label, choice]) =>
           <Button key={choice} secondary disabled={busy} onClick={() => void perform(() => rpc('FEEDBACK', { choice }))}>{label}</Button>)}
@@ -73,6 +79,16 @@ export default function App() {
         <div className="flex gap-2"><Button secondary disabled={busy} onClick={() => void perform(async () => { setDebug(await rpc('DEBUG')); })}>Inspecionar contexto</Button>
         <Button secondary onClick={() => setDebug(null)}>Limpar prévia</Button></div>
         {debug !== null && <pre className="mt-3 text-xs whitespace-pre-wrap break-all">{JSON.stringify(debug, null, 2)}</pre>}
+      </details>
+      <details className="mt-4 text-sm"><summary className="cursor-pointer underline">Diagnóstico da análise</summary>
+        <dl className="hint mt-3 grid grid-cols-2 gap-2">
+          <dt>Tentativas nesta sessão</dt><dd>{s.analyses}</dd>
+          <dt>Última resposta</dt><dd>{snapshot.state.lastAnalysisAt ? snapshot.state.lastLatencyMs + ' ms' : 'Ainda não recebida'}</dd>
+          <dt>Foco informado pelo Chrome</dt><dd>{snapshot.state.focusSignals?.window ? 'Sim' : 'Não'}</dd>
+          <dt>Foco da própria página</dt><dd>{snapshot.state.focusSignals?.page == null ? 'Não verificado' : snapshot.state.focusSignals.page ? 'Sim' : 'Não'}</dd>
+          <dt>Página visível</dt><dd>{snapshot.state.focusSignals?.visible == null ? 'Não verificado' : snapshot.state.focusSignals.visible ? 'Sim' : 'Não'}</dd>
+          <dt>Sistema ativo</dt><dd>{snapshot.state.idle ? 'Não' : 'Sim'}</dd>
+        </dl>
       </details>
     </> : <>
       <p className="text-xs tracking-widest text-leaf mb-2">UM PEQUENO PONTO DE PARTIDA</p>

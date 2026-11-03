@@ -16,7 +16,7 @@ describe('seleção da aba e foco do navegador', () => {
     const environment = await readBrowserEnvironment(browser);
     expect(browser.tabs.query).toHaveBeenCalledWith({ active: true, lastFocusedWindow: true });
     expect(browser.windows.get).toHaveBeenCalledWith(7);
-    expect(environment).toEqual({ tab: { id: 12, windowId: 7, url: 'https://pandas.pydata.org/docs/', incognito: false }, focused: true, idle: false });
+    expect(environment).toMatchObject({ tab: { id: 12, windowId: 7, url: 'https://pandas.pydata.org/docs/', incognito: false }, focused: true, idle: false });
   });
   it('mantém o domínio identificável sem considerar a janela em segundo plano como ativa', async () => {
     const environment = await readBrowserEnvironment(api({ focused: false }));
@@ -52,4 +52,44 @@ describe('seleção da aba e foco do navegador', () => {
     expect(monitoringMessages.window_unfocused.title).not.toBe(monitoringMessages.permission_required.title);
     expect(monitoringMessages.consent_required.description).toContain('consentimento');
   });
+});
+
+describe('foco independente da página autorizada', () => {
+  it('recupera foco quando o Chrome informa false mas a página tem foco e está visível', async () => {
+    const environment = await readBrowserEnvironment(api({ focused: false }), async () => ({ focused: true, visible: true }));
+    expect(environment.focused).toBe(true);
+    expect(environment.windowFocused).toBe(false);
+    expect(environment.pageFocused).toBe(true);
+  });
+  it('uma página apenas visível não prova foco', async () => {
+    expect((await readBrowserEnvironment(api({ focused: false }), async () => ({ focused: false, visible: true }))).focused).toBe(false);
+  });
+  it('não conta uma página oculta mesmo que outro sinal indique foco', async () => {
+    expect((await readBrowserEnvironment(api(), async () => ({ focused: true, visible: false }))).focused).toBe(false);
+  });
+  it('foco do popup não equivale a foco da página', async () => {
+    expect((await readBrowserEnvironment(api(), async () => ({ focused: false, visible: true }))).focused).toBe(false);
+  });
+  it('não faz a sondagem em janela minimizada', async () => {
+    const probe = vi.fn().mockResolvedValue({ focused: true, visible: true });
+    expect((await readBrowserEnvironment(api({ state: 'minimized' }), probe)).focused).toBe(false);
+    expect(probe).not.toHaveBeenCalled();
+  });
+  it('não faz sondagem em aba anônima', async () => {
+    const probe = vi.fn();
+    expect((await readBrowserEnvironment(api({ incognito: true }), probe)).tab).toBeNull();
+    expect(probe).not.toHaveBeenCalled();
+  });
+  it('uma falha da sondagem não transforma foco negativo em atividade', async () => {
+    expect((await readBrowserEnvironment(api({ focused: false }), async () => { throw new Error('Denied'); })).focused).toBe(false);
+  });
+  it('confirmação de foco não ignora o estado idle', async () => {
+    const environment = await readBrowserEnvironment(api({ activity: 'idle' }), async () => ({ focused: true, visible: true }));
+    expect(environment.idle).toBe(true);
+  });
+});
+it('uma página autorizada pode confirmar foco mesmo se a consulta da janela falhar', async () => {
+ const browser = api({ focused: false }); browser.windows.get.mockRejectedValue(new Error('Unavailable'));
+ const environment = await readBrowserEnvironment(browser, async () => ({ focused: true, visible: true }));
+ expect(environment.focused).toBe(true); expect(environment.windowFocused).toBe(false);
 });

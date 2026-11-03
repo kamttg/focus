@@ -44,7 +44,7 @@ npm run dev
 
 O modo AUTH_MODE=local funciona exclusivamente em URLs localhost/127.0.0.1. Um deploy remoto nesse modo rejeita autenticação.
 
-**Modelo:** o plano solicita gpt-6-luna. O nome está em OPENAI_MODEL e não foi validado contra uma conta real. Se a API rejeitar o identificador ou reasoning.effort, configure um modelo/nível compatível com Responses e Structured Outputs. A integração nunca substitui falha da IA por heurística de domínio.
+**Modelo:** gpt-6-luna, com Responses API e Structured Outputs, conforme a [documentação oficial da OpenAI](https://developers.openai.com/api/docs/models/gpt-6-luna). O identificador é configurável em OPENAI_MODEL. A disponibilidade para a sua chave, os créditos e uma inferência real ainda precisam ser confirmados na sua conta; os testes automatizados usam respostas simuladas. Falha da IA nunca é substituída por heurística de domínio.
 
 ## Backend público autenticado
 
@@ -125,3 +125,11 @@ Ao fechar o popup da barra, a extensão verifica novamente a aba imediatamente, 
 O popup agora diferencia falta de consentimento, permissão por origem, inatividade, janela em segundo plano, página excluída e falha de extração. O botão de autorização aparece somente quando a permissão da origem está faltando. A versão instalada aparece no rodapé.
 
 Para aplicar sobre uma instalação local existente, preserve a pasta da extensão e o arquivo privado worker/.dev.vars. Depois de atualizar o código e executar npm.cmd ci e npm.cmd run build, clique em Recarregar no cartão do Fio em chrome://extensions. Atualizar na mesma pasta preserva o ID da extensão; carregar uma pasta diferente pode mudar o ID e exigir atualizar ALLOWED_ORIGINS no servidor.
+
+## Atualização 0.1.2 — foco independente e diagnóstico
+
+Em origens consentidas, autorizadas e não sensíveis, a extensão verifica document.hasFocus() e visibilityState no mundo isolado. Esses dois sinais permitem confirmar uma página ativa quando o sinal da janela do Chrome fica desatualizado. Visibilidade sozinha não autoriza análise. Janela minimizada, página sem foco e sistema idle continuam sem contagem. Observadores de foco e visibilidade enviam apenas eventos sem texto e são removidos ao pausar, encerrar ou revogar a origem.
+
+O popup mantém visível o último resultado recebido durante pausas de foco, mostra erros seguros de autenticação, crédito, modelo, quota e conexão, e oferece um diagnóstico sem prompts nem chaves. O botão Testar aviso (sem IA) exibe uma prévia explicitamente rotulada, sem chamada ao provedor, sem alterar classificação e sem consumir cooldown. Ele não comprova classificação semântica.
+
+O servidor reserva até 1500 tokens quando reasoning low está configurado (500 com none), incluindo o orçamento de raciocínio. Respostas incompletas ou recusadas continuam sem alertas. Nenhuma mensagem bruta do provedor é refletida no cliente ou registrada em logs.

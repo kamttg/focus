@@ -252,3 +252,58 @@ test('fechar o popup real reavalia a página sem esperar o alarme periódico', a
  await control.evaluate(() => chrome.runtime.sendMessage({ type: 'FINISH' }));
  await control.close(); await site.close();
 });
+
+test('sinal da página recupera monitoramento quando a janela do Chrome informa foco falso', async () => {
+ const site = await context.newPage();
+ await site.route('https://public.example.test/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Humor de gatos</title><main><h1>Entretenimento</h1><p>Página pública sintética fora da tarefa de estudar Pandas.</p></main>' }));
+ await site.goto('https://public.example.test/stale-window-focus');
+ const control = await context.newPage(); await control.goto('chrome-extension://' + id + '/popup.html');
+ await control.getByLabel('Tema e objetivo').fill('Estudar Pandas');
+ await control.getByRole('button', { name: 'Iniciar sessão' }).click();
+ await expect(control.getByRole('button', { name: 'Pausar', exact: true })).toBeVisible();
+ await worker.evaluate(() => {
+   const global = globalThis as any;
+   global.__fioOriginalWindowGet = chrome.windows.get.bind(chrome.windows);
+   chrome.windows.get = (async (windowId: number) => ({ ...await global.__fioOriginalWindowGet(windowId), focused: false })) as typeof chrome.windows.get;
+ });
+ try {
+   await site.bringToFront(); await site.mouse.click(20, 160);
+   const state = () => worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime);
+   await expect.poll(async () => (await state()).classification?.label, { timeout: 15000 }).toBe('off_topic');
+   expect((await state()).focusSignals).toMatchObject({ window: false, page: true, visible: true });
+   await expect(site.locator('#__fio_overlay')).toBeAttached();
+ } finally {
+   await worker.evaluate(() => { chrome.windows.get = (globalThis as any).__fioOriginalWindowGet; delete (globalThis as any).__fioOriginalWindowGet; });
+   await control.bringToFront(); await control.evaluate(() => chrome.runtime.sendMessage({ type: 'FINISH' }));
+   await control.close(); await site.close();
+ }
+});
+
+test('prévia visual funciona sem IA e não altera classificação, chamadas ou cooldown', async () => {
+ const site = await context.newPage();
+ await site.route('https://public.example.test/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Pandas</title><main><h1>Página pública</h1><p>Teste de interface.</p></main>' }));
+ await site.goto('https://public.example.test/preview');
+ const control = await context.newPage(); await control.goto('chrome-extension://' + id + '/popup.html');
+ await control.evaluate(async () => {
+   await chrome.runtime.sendMessage({ type: 'START', kind: 'study', goal: 'Estudar Pandas', topics: [], duration: 0, useCurrentTab: false });
+   await chrome.runtime.sendMessage({ type: 'PAUSE' });
+ });
+ await site.bringToFront();
+ await worker.evaluate(() => chrome.action.openPopup());
+ await expect.poll(() => worker.evaluate(() => chrome.runtime.getContexts({ contextTypes: ['POPUP'] }))).toHaveLength(1);
+ const before = await worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime);
+ const calls = requests.length;
+ const response = await control.evaluate(() => chrome.runtime.sendMessage({ type: 'PREVIEW_REMINDER' }));
+ expect(response.ok).toBe(true);
+ await control.evaluate(() => { for (const view of chrome.extension.getViews({ type: 'popup' })) view.close(); });
+ await expect.poll(() => worker.evaluate(() => chrome.runtime.getContexts({ contextTypes: ['POPUP'] }))).toHaveLength(0);
+ await expect(site.locator('#__fio_preview')).toBeAttached();
+ const after = await worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime);
+ expect(after.classification).toEqual(before.classification);
+ expect(after.clock.cooldownUntil).toBe(before.clock.cooldownUntil);
+ expect(after.session.analyses).toBe(before.session.analyses);
+ expect(after.session.alerts).toBe(before.session.alerts);
+ expect(requests.length).toBe(calls);
+ await site.screenshot({ path: 'docs/screenshots/preview.png', fullPage: true });
+ await control.close(); await site.close();
+});

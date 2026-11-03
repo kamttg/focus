@@ -4,6 +4,7 @@ import { authenticate } from './auth';
 import { consumeQuota } from './limits';
 import { OpenAIProvider } from './openai';
 import type { Env } from './types';
+import { safeAnalysisError } from '../../shared/analysis-errors';
 export { Quota } from './limits';
 
 async function boundedBody(request: Request): Promise<string> {
@@ -47,9 +48,10 @@ export default {
       const quota = await consumeQuota(user, env);
       if (!quota.ok) return reply({ error: 'quota_exceeded' }, 429);
       return reply(await new OpenAIProvider(env).classify(input));
-    } catch {
+    } catch (error) {
       // Nunca logar payloads, exceções do provedor ou dados pessoais.
-      return reply(uncertain(), 502);
+      const failure = safeAnalysisError(error);
+      return reply({ ...uncertain(failure.message), error: failure.code }, 502);
     }
   }
 };

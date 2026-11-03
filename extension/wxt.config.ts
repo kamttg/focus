@@ -4,7 +4,7 @@ export default defineConfig({
   manifest: {
     name: 'Fio — AI Focus Companion',
     description: 'Lembretes gentis a partir do contexto de páginas que você autoriza.',
-    version: '0.1.1',
+    version: '0.1.2',
     minimum_chrome_version: '120',
     permissions: ['storage', 'tabs', 'scripting', 'idle', 'alarms', 'notifications'],
     optional_host_permissions: ['http://*/*', 'https://*/*'],
