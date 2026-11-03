@@ -9,7 +9,6 @@ export default function App() {
   const [message, setMessage] = useState(''); const [error, setError] = useState('');
   const [busy, setBusy] = useState(false); const [origin, setOrigin] = useState('');
   const [email, setEmail] = useState(''); const [code, setCode] = useState('');
-  const [debug, setDebug] = useState<unknown>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const refresh = async () => { const data = await rpc<Snapshot>('GET'); setSnapshot(data); setPrefs(data.prefs); };
   useEffect(() => { void refresh().catch(e => setError(e.message)); }, []);
@@ -78,16 +77,13 @@ export default function App() {
       <label className="mt-3">Código recebido<input value={code} onChange={e => setCode(e.target.value)} autoComplete="one-time-code" /></label>
       <Button disabled={busy || !code} onClick={() => void perform(() => rpc('AUTH', { email, code }), 'Conectado.')}>Entrar</Button></>}
     </section>
-    <section className="card"><h2>Inspeção local e correções</h2><p className="hint mb-3">Prévia temporária do contexto da aba ativa autorizada. Esta ação não envia dados à IA. Feche ou limpe a prévia após inspecionar.</p>
-      <div className="flex flex-wrap gap-2"><Button secondary disabled={busy} onClick={() => void perform(async () => { setDebug(await rpc('DEBUG')); }, 'Prévia extraída localmente.')}>Inspecionar aba ativa</Button>
-      <Button secondary onClick={() => setDebug(null)}>Limpar prévia</Button>
-      <Button secondary disabled={busy} onClick={() => void perform(() => rpc('CLEAR_FEEDBACK'), 'Correções desta sessão limpas.')}>Limpar correções da sessão</Button></div>
-      {debug !== null && <pre className="mt-4 p-3 text-xs whitespace-pre-wrap break-all bg-stone-100 rounded-xl">{JSON.stringify(debug, null, 2)}</pre>}
+    <section className="card"><h2>Inspeção local e correções</h2><p className="hint mb-3">Para ver uma prévia local, abra o popup enquanto estiver na página autorizada e expanda “Inspeção local do contexto”. A prévia não é enviada à IA.</p>
+      <div className="flex flex-wrap gap-2"><Button secondary disabled={busy} onClick={() => void perform(() => rpc('CLEAR_FEEDBACK'), 'Correções desta sessão limpas.')}>Limpar correções da sessão</Button></div>
       <p className="hint mt-3">Última análise: {snapshot?.state.lastLatencyMs || 0} ms. Análises nesta sessão: {snapshot?.state.session?.analyses || 0}.</p>
     </section>
     <section className="card"><h2>Excluir dados deste navegador</h2><p className="text-sm mb-3">Encerra a sessão, remove preferências, login, cache, cotas locais e permissões opcionais. Os limites de segurança do servidor permanecem.</p>
       <label className="check"><input type="checkbox" checked={confirmDelete} onChange={e => setConfirmDelete(e.target.checked)} />Quero excluir os dados locais e revogar as permissões.</label>
-      <Button secondary disabled={busy || !confirmDelete} onClick={() => void perform(async () => { await rpc('DELETE_DATA'); setDebug(null); setConfirmDelete(false); }, 'Dados locais excluídos.')}>Excluir dados locais</Button>
+      <Button secondary disabled={busy || !confirmDelete} onClick={() => void perform(async () => { await rpc('DELETE_DATA'); setConfirmDelete(false); }, 'Dados locais excluídos.')}>Excluir dados locais</Button>
     </section>
     <footer className="hint my-8">O Fio oferece apoio contextual. Não mede atenção, não diagnostica e não bloqueia sua navegação.</footer>
   </main>;

@@ -1,3 +1,4 @@
+import { isTrustedUI } from '../lib/message-security';
 import { defaults, initialState, hashContext, cached, type RuntimeState, type Preferences } from '../lib/session';
 import { accrue, resetContinuous, shouldAlert } from '../lib/decision-engine';
 import { allowedPage, originPattern, validEndpoint } from '../lib/privacy';
@@ -56,7 +57,7 @@ export default defineBackground(() => {
     }
     if (prefs.overlay && state.tabId !== null && await eligible(state.url)) {
       await chrome.scripting.executeScript({ target: { tabId: state.tabId }, func: showOverlay,
-        args: [s.goal, state.classification?.reason || ''] }).catch(() => {});
+        args: [s.goal, state.classification?.reason || '', s.focusTabId !== null] }).catch(() => {});
     }
   }
   async function eligible(url: string) {
@@ -116,7 +117,7 @@ export default defineBackground(() => {
   async function analyze() {
     clearTimeout(stabilityTimer); await chrome.alarms.clear('fio-stable');
     const s = state.session;
-    if (!s || !active() || !state.focused || state.idle || state.tabId === null) return;
+    if (!s || !active() || !state.focused || state.idle || state.tabId === null || state.status === 'analyzing') return;
     if (s.endsAt && Date.now() >= s.endsAt) { await finish(); return; }
     if (!(await eligible(state.url))) { state.status = 'not_monitored'; await save(); return; }
     const feedback = s.feedback[state.domain];
@@ -142,7 +143,11 @@ export default defineBackground(() => {
     const pending = inFlight.get(flightKey);
     if (pending) {
       state.status = 'analyzing'; await save();
-      void pending.promise.then(result => run(() => accept(result, revision, key, 0))).catch(() => {});
+      void pending.promise.then(result => run(() => accept(result, revision, key, 0))).catch(() => run(async () => {
+        if (revision !== state.revision || !active()) return;
+        state.failures++; state.backoffUntil = Date.now() + Math.min(300_000, 30_000 * 2 ** Math.min(4, state.failures - 1));
+        await accept(uncertain(), revision, '', 0);
+      }));
       return;
     }
     const day = new Date().toISOString().slice(0, 10);
@@ -192,9 +197,10 @@ export default defineBackground(() => {
     await observe();
   });
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
-    const trustedUI = !sender.tab && sender.id === chrome.runtime.id;
-    const content = sender.tab?.id === state.tabId && sender.id === chrome.runtime.id;
     void ready.then(() => run(async () => {
+      const trustedUI = isTrustedUI(sender, chrome.runtime.id);
+      const content = sender.tab?.id === state.tabId && sender.id === chrome.runtime.id &&
+        sender.url === state.url && (sender.frameId ?? 0) === 0;
       if (message.type === 'DIRTY' && content) { await observe(); return { ok: true }; }
       if (message.type === 'FEEDBACK' && (trustedUI || content)) { await feedback(message.choice); return { ok: true }; }
       if (!trustedUI) throw new Error('Ação não autorizada.');

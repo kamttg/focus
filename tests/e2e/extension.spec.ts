@@ -109,11 +109,14 @@ test('ciclo completo com API simulada: mesmo domínio, cache, lembrete e correç
  const state = () => worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime);
  await expect.poll(async () => (await state()).classification?.label, { timeout: 15000 }).toBe('relevant');
  expect(requests).toHaveLength(1);
+ await expect(popup.getByRole('heading', { name: 'Parece fazer parte da tarefa' })).toBeVisible();
+ await popup.screenshot({ path: 'docs/screenshots/session.png', fullPage: true });
  expect(Object.keys(requests[0])).toEqual(['goal', 'topics', 'page']);
  expect(requests[0].page.domain).toBe('public.example.test');
  await site.goto('https://public.example.test/humor');
  await expect.poll(async () => (await state()).classification?.label, { timeout: 15000 }).toBe('off_topic');
  await expect(site.locator('#__fio_overlay')).toBeAttached();
+ await site.screenshot({ path: 'docs/screenshots/reminder.png', fullPage: true });
  expect(requests).toHaveLength(2);
  await site.goto('https://public.example.test/tutorial');
  await expect.poll(async () => (await state()).classification?.label, { timeout: 15000 }).toBe('relevant');

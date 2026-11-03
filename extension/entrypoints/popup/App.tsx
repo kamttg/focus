@@ -4,6 +4,7 @@ import { originPattern, allowedPage } from '../../lib/privacy';
 import { Brand, Button, statuses } from '../../components/ui';
 export default function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>();
+  const [debug, setDebug] = useState<unknown>(null);
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
   const [goal, setGoal] = useState(''); const [topics, setTopics] = useState('');
   const [kind, setKind] = useState('study'); const [duration, setDuration] = useState('25');
@@ -11,7 +12,7 @@ export default function App() {
   const [reference, setReference] = useState(false);
   const refresh = async () => { const data = await rpc<Snapshot>('GET'); setSnapshot(data); };
   useEffect(() => {
-    void refresh().catch(e => setError(e.message));
+    void rpc<Snapshot>('GET').then(data => { setSnapshot(data); setDelay(String(data.prefs.delayMinutes)); }).catch(e => setError(e.message));
     const timer = setInterval(() => { void refresh().catch(() => {}); }, 2000);
     return () => clearInterval(timer);
   }, []);
@@ -57,9 +58,15 @@ export default function App() {
       <Button secondary disabled={busy} onClick={() => void perform(() => rpc('FINISH'))}>Encerrar sessão</Button></div>
       {snapshot.state.status === 'not_monitored' && <Button secondary disabled={busy} onClick={() => void perform(authorize)}>Autorizar site atual</Button>}
       {snapshot.state.classification && <div className="flex flex-wrap gap-2 mt-4">
-        {([['Faz parte da tarefa', 'relevant'], ['Adiar', 'snooze'], ['Ignorar site', 'ignore'], ['Voltar ao foco', 'return']] as const).map(([label, choice]) =>
+        {([['Faz parte da tarefa', 'relevant'], ['Adiar', 'snooze'], ['Ignorar site', 'ignore'], ['Voltar ao foco', 'return']] as const).filter(([, choice]) => choice !== 'return' || s.focusTabId !== null).map(([label, choice]) =>
           <Button key={choice} secondary disabled={busy} onClick={() => void perform(() => rpc('FEEDBACK', { choice }))}>{label}</Button>)}
       </div>}
+      <details className="mt-5 text-sm"><summary className="cursor-pointer underline">Inspeção local do contexto</summary>
+        <p className="hint my-3">Extrai uma prévia da aba ativa autorizada, sem envio à IA. A prévia existe somente enquanto este popup permanece aberto.</p>
+        <div className="flex gap-2"><Button secondary disabled={busy} onClick={() => void perform(async () => { setDebug(await rpc('DEBUG')); })}>Inspecionar contexto</Button>
+        <Button secondary onClick={() => setDebug(null)}>Limpar prévia</Button></div>
+        {debug !== null && <pre className="mt-3 text-xs whitespace-pre-wrap break-all">{JSON.stringify(debug, null, 2)}</pre>}
+      </details>
     </> : <>
       <p className="text-xs tracking-widest text-leaf mb-2">UM PEQUENO PONTO DE PARTIDA</p>
       <h1>O que merece sua atenção?</h1><p className="text-sm text-stone-600 mb-5">Defina sua intenção. O Fio ajuda a lembrar dela, com gentileza.</p>

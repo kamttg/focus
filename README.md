@@ -16,6 +16,12 @@ Extensão de foco contextual: você define uma intenção, autoriza uma origem e
 - Notificações silenciosas e overlay acessível; correções por domínio válidas na sessão, adiar e ignorar.
 - Testes Vitest e Playwright com uma extensão real no Chromium; CI gera pacote instalável, screenshots e relatório.
 
+## Interface
+
+Screenshots gerados no Chromium com páginas sintéticas e API simulada:
+
+Baixe o artefato **fio-validation** na execução bem-sucedida do [GitHub Actions](https://github.com/kamttg/focus/actions). Ele inclui popup, sessão, lembrete e configurações, além do relatório de testes e do lockfile usado no build.
+
 ## Executar localmente
 
 Requisitos: Node.js 22+, npm, Chrome/Chromium e conta OpenAI com acesso ao modelo configurado.
@@ -67,7 +73,7 @@ xvfb-run --auto-servernum npm run test:e2e
 npm run test:e2e
 ~~~
 
-O [workflow](.github/workflows/ci.yml) executa essas etapas e publica fio-chrome-mv3 e fio-validation como artefatos. Os testes não precisam de chave OpenAI e não fazem inferências pagas. Resultados reais estão em [Actions](https://github.com/kamttg/focus/actions); os testes de contrato usam respostas simuladas, sem alegar validação semântica do modelo.
+O [workflow](.github/workflows/ci.yml) executa essas etapas e publica fio-chrome-mv3 e fio-validation como artefatos. Os testes não precisam de chave OpenAI e não fazem inferências pagas. O CI tem acesso somente de leitura ao repositório. O lockfile resolvido fica no artefato fio-validation; para reproduzir exatamente uma execução, copie esse package-lock.json para a raiz e use npm ci. Resultados reais estão em [Actions](https://github.com/kamttg/focus/actions); os testes de contrato usam respostas simuladas, sem alegar validação semântica do modelo.
 
 ## Comportamentos e limites conhecidos
 

@@ -16,11 +16,16 @@ jobs:
         with:
           node-version: 22
       - name: Install dependencies
-        run: npm install
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
       - name: Typecheck
         run: npm run typecheck
       - name: Unit and API tests
-        run: npm test
+        run: npm test -- --reporter=default --reporter=json --outputFile=work/unit-results.json
       - name: Build extension and validate Worker bundle
         run: npm run build
       - name: Install test browser
@@ -48,3 +53,4 @@ jobs:
             playwright-report/
             test-results/
             package-lock.json
+            work/unit-results.json

@@ -1,5 +1,5 @@
 // Executado no mundo isolado apenas em uma origem autorizada.
-export function showOverlay(goal: string, reason: string) {
+export function showOverlay(goal: string, reason: string, canReturn: boolean) {
   document.getElementById('__fio_overlay')?.remove();
   const host = document.createElement('div'); host.id = '__fio_overlay';
   const shadow = host.attachShadow({ mode: 'closed' });
@@ -13,6 +13,7 @@ export function showOverlay(goal: string, reason: string) {
     const p = document.createElement('p'); p.textContent = value; panel.append(p);
   }
   for (const [label, choice] of [['Voltar ao foco', 'return'], ['Faz parte da tarefa', 'relevant'], ['Adiar', 'snooze'], ['Ignorar site', 'ignore'], ['Pausar sessão', 'pause'], ['Fechar', 'snooze']]) {
+    if (choice === 'return' && !canReturn) continue;
     const button = document.createElement('button'); button.textContent = label!;
     button.addEventListener('click', () => {
       void chrome.runtime.sendMessage({ type: 'FEEDBACK', choice }).catch(() => {});
