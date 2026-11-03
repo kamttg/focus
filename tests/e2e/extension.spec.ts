@@ -112,7 +112,7 @@ test('ciclo completo com API simulada: mesmo domínio, cache, lembrete e correç
    if (!r.ok) throw new Error(r.error);
  }, { endpoint });
  await popup.getByLabel('Tema e objetivo').fill('Estudar Pandas e limpeza de dados');
- await popup.getByLabel('Avisar após', { exact: true }).selectOption('0');
+ await popup.getByLabel('Avisar após').selectOption('0');
  await popup.getByRole('button', { name: 'Iniciar sessão' }).click();
  await expect(popup.getByRole('button', { name: 'Pausar', exact: true })).toBeVisible();
  await site.bringToFront();
