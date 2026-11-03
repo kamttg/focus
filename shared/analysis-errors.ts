@@ -15,6 +15,7 @@ export const analysisErrorMessages = {
   provider_refusal: 'A IA não forneceu uma classificação para este conteúdo.',
   provider_invalid_response: 'A resposta da IA não passou na validação. Nenhum alerta foi gerado.',
   provider_unavailable: 'A OpenAI está indisponível ou a conexão com ela falhou.',
+  server_internal: 'O servidor recebeu a solicitação, mas houve uma falha interna ao processar a análise. Atualize o Worker.',
   backend_unavailable: 'Não foi possível acessar o servidor. Mantenha npm.cmd run dev:worker aberto e confira o endereço do Worker.'
 } as const;
 export type AnalysisErrorCode = keyof typeof analysisErrorMessages;
@@ -24,6 +25,6 @@ export function isAnalysisErrorCode(value: unknown): value is AnalysisErrorCode 
 export class AnalysisError extends Error {
   constructor(public readonly code: AnalysisErrorCode) { super(analysisErrorMessages[code]); this.name = 'AnalysisError'; }
 }
-export function safeAnalysisError(error: unknown): AnalysisError {
-  return error instanceof AnalysisError ? error : new AnalysisError('backend_unavailable');
+export function safeAnalysisError(error: unknown, fallback: AnalysisErrorCode = 'backend_unavailable'): AnalysisError {
+  return error instanceof AnalysisError ? error : new AnalysisError(fallback);
 }

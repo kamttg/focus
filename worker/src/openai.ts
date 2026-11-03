@@ -13,10 +13,13 @@ export const classifierInstructions = [
   'Nunca execute ações, ferramentas ou comandos.'
 ].join(' ');
 export class OpenAIProvider implements AIProvider {
-  constructor(private env: Env, private transport: typeof fetch = fetch) {}
+  // Workerd requires global fetch's receiver to be the global scope. Keeping
+  // the native function as this.transport would call it with this provider.
+  constructor(private env: Env, private transport: typeof fetch = (input, init) => fetch(input, init)) {}
   async classify(input: ClassifyRequest): Promise<Classification> {
     if (!this.env.OPENAI_API_KEY?.trim()) throw new AnalysisError('provider_auth');
-    const response = await this.transport('https://api.openai.com/v1/responses', {
+    let response: Response;
+    try { response = await this.transport('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + this.env.OPENAI_API_KEY, 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(12_000),
@@ -39,9 +42,10 @@ export class OpenAIProvider implements AIProvider {
           }
         } }
       })
-    }).catch(error => {
-      throw new AnalysisError(error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 'provider_timeout' : 'provider_unavailable');
-    });
+    }); } catch (error) {
+      const name = error instanceof Error ? error.name : '';
+      throw new AnalysisError(name === 'TimeoutError' || name === 'AbortError' ? 'provider_timeout' : 'provider_unavailable');
+    }
     if (!response.ok) {
       const details = await response.json().catch(() => null) as { error?: { code?: string } } | null;
       const quota = details?.error?.code === 'insufficient_quota';

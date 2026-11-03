@@ -141,3 +141,11 @@ Na primeira ativação, a pessoa confirma o envio limitado de contexto e o Chrom
 Permissões individuais antigas não são convertidas silenciosamente em acesso global. Instalações anteriores exibem Ativar leitura automática e pedem a nova autorização. Recusar mantém a leitura desativada. Nas configurações, Desativar leitura automática pausa a sessão e remove o acesso amplo. Revogação no Chrome também interrompe novas análises.
 
 E-mails, bancos, conversas (inclusive ChatGPT, Claude e Gemini), páginas de login, campos privados, rede local, origens excluídas e navegação anônima ficam fora da coleta. Os filtros não detectam todo conteúdo privado da web. Uma autorização ampla é uma capacidade técnica maior que os dados efetivamente extraídos; a interface explica essa diferença antes da ativação.
+
+## Correção do Worker — receiver de fetch
+
+No runtime workerd, guardar fetch nativo como propriedade e chamar this.transport(...) provoca Illegal invocation antes de a chamada chegar à OpenAI. O transporte padrão agora invoca fetch no escopo global e trata também exceções síncronas. Falhas internas do servidor não são mais anunciadas como falta de conexão com o próprio servidor.
+
+Após npm run build, npm run test:worker-runtime executa o bundle em Miniflare/workerd, com Durable Object e SQLite reais e uma resposta OpenAI simulada na fronteira de rede. O teste verifica a saída estruturada e a cota, sem API key real nem tráfego externo. Reintroduzir o receiver antigo faz esse teste falhar com HTTP 502.
+
+Para aplicar apenas esta correção a uma instalação 0.2.0, atualize worker/src/openai.ts, worker/src/index.ts e shared/analysis-errors.ts e reinicie o Worker. Não é necessário reconstruir ou reinstalar a extensão; preserve worker/.dev.vars e seu ID atual.

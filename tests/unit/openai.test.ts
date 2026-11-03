@@ -41,3 +41,16 @@ it('reserva tokens também para reasoning quando o nível low está configurado'
  await expect(new OpenAIProvider(env, transport).classify(input)).rejects.toThrow();
  expect(JSON.parse(transport.mock.calls[0]![1].body).max_output_tokens).toBe(1500);
 });
+it('converte também uma exceção síncrona do transporte em erro seguro de provedor', async () => {
+ const transport = vi.fn(() => { throw new TypeError('SEGREDO_INTERNO'); });
+ await expect(new OpenAIProvider(env, transport).classify(input)).rejects.toMatchObject({ code: 'provider_unavailable' });
+});
+it('o transporte padrão não chama fetch com o provedor como receiver', async () => {
+ const nativeLike = vi.fn(function (this: unknown) {
+   if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation');
+   return Promise.resolve(Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ label: 'relevant', confidence: .9, reason: 'Tema relacionado.' }) }] }] }));
+ });
+ vi.stubGlobal('fetch', nativeLike);
+ try { expect((await new OpenAIProvider(env).classify(input)).label).toBe('relevant'); }
+ finally { vi.unstubAllGlobals(); }
+});

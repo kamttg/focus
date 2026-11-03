@@ -42,3 +42,12 @@ it.each(['chatgpt.com', 'claude.ai', 'app.internal', 'host.local'])('o servidor 
  expect(response.status).toBe(400); expect((await response.json()).error).toBe('excluded');
  expect(transport).not.toHaveBeenCalled();
 });
+it('falha interna não é anunciada como servidor inacessível e não revela detalhes', async () => {
+ const transport = vi.fn(); vi.stubGlobal('fetch', transport);
+ const broken = { ...env, QUOTAS: { idFromName() { throw new Error('DETALHE_PRIVADO'); } } } as unknown as Env;
+ const response = await api.fetch(req(), broken);
+ expect(response.status).toBe(502);
+ const body = await response.json();
+ expect(body.error).toBe('server_internal'); expect(body.label).toBe('uncertain');
+ expect(JSON.stringify(body)).not.toContain('DETALHE_PRIVADO'); expect(transport).not.toHaveBeenCalled();
+});

@@ -18,6 +18,7 @@
     "test": "vitest run",
     "build": "npm run build -w extension && npm run build -w worker",
     "test:e2e": "playwright test",
+    "test:worker-runtime": "node --test tests/runtime/worker-runtime.mjs",
     "check": "npm run typecheck && npm test && npm run build",
     "audit": "npm audit"
   },

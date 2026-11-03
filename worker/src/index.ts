@@ -50,7 +50,7 @@ export default {
       return reply(await new OpenAIProvider(env).classify(input));
     } catch (error) {
       // Nunca logar payloads, exceções do provedor ou dados pessoais.
-      const failure = safeAnalysisError(error);
+      const failure = safeAnalysisError(error, 'server_internal');
       return reply({ ...uncertain(failure.message), error: failure.code }, 502);
     }
   }
