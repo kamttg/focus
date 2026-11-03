@@ -4,7 +4,7 @@
 
 - tabs: URL e título da aba ativa para orquestração e exclusões. Capacidade sensível explicada no consentimento.
 - scripting: funções isoladas para extrair e exibir overlay.
-- optional_host_permissions HTTP/HTTPS: solicitado apenas por gesto explícito para origem individual. Backend e Supabase também exigem acesso.
+- optional_host_permissions HTTP/HTTPS: acesso amplo solicitado uma vez por gesto explícito na ativação. Durante a sessão, páginas elegíveis são verificadas automaticamente, sem liberações por domínio.
 - idle, windows/tabs, alarms: atividade observável do navegador e temporização.
 - storage: preferências persistentes e estado temporário.
 - notifications: lembretes silenciosos.
@@ -20,7 +20,7 @@ Preferências e contadores diários: storage.local. Objetivo, classe, hash, feed
 
 ## Limitações assumidas
 
-Uma permissão de origem permite tecnicamente mais leitura do que o extrator utiliza. Bloqueios de domínio e seletores são incompletos: um site arbitrário pode apresentar informações privadas como texto público. Esta versão deve ser usada em páginas públicas controladas. Revogue uma origem se houver dúvida.
+A autorização HTTP/HTTPS permite tecnicamente acesso amplo aos sites; o extrator e o motor restringem o que de fato é coletado. Bloqueios de domínio e seletores são incompletos: um site arbitrário pode apresentar informações privadas como texto público. Esta versão deve ser usada em páginas públicas controladas. Desative a leitura automática, pause a sessão ou adicione o domínio às exclusões se houver dúvida.
 
 Não há garantia de retenção zero no provedor. store:false desativa persistência recuperável da resposta, e políticas de abuso/contrato do provedor podem aplicar-se. Consulte https://platform.openai.com/docs/guides/your-data antes de distribuir.
 
@@ -38,4 +38,8 @@ Não há garantia de retenção zero no provedor. store:false desativa persistê
 
 ## Revogação e exclusão
 
-Configurações permite remover origens, limpar correções e excluir dados locais, encerrando a sessão. Os contadores do servidor permanecem para não permitir bypass de cota. Não há logs de prompts, cabeçalhos Authorization, textos ou tokens no código da aplicação. Configure também logs, observabilidade e retenção da infraestrutura ao implantar.
+Configurações permite desativar a leitura automática e remover o acesso amplo, limpar correções e excluir dados locais, encerrando a sessão. Os contadores do servidor permanecem para não permitir bypass de cota. Não há logs de prompts, cabeçalhos Authorization, textos ou tokens no código da aplicação. Configure também logs, observabilidade e retenção da infraestrutura ao implantar.
+
+## Escopo automático
+
+A permissão ampla não é obrigatória silenciosamente na instalação. A pessoa confirma o consentimento e aceita o diálogo do Chrome ao iniciar/ativar. Sem esse acesso inicial, o motor rejeita o início da sessão e não lê conteúdo. A revogação invalida classificações pendentes e impede novas extrações, inclusive quando permissões individuais antigas ainda existem. Chats de IA e endereços locais/privados são excluídos por padrão. Histórico completo, outras abas em segundo plano e aplicativos do sistema não são monitorados.

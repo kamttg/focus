@@ -28,3 +28,8 @@ it.each([{ label: 'distracted', confidence: .9, reason: 'x' }, { label: 'off_top
  { label: 'off_topic', confidence: .9, reason: 'x'.repeat(181) }, { label: 'relevant', confidence: .9, reason: 'x', script: 'alert()' }])('rejeita resultado fora do contrato', result => {
  expect(classificationSchema.safeParse(result).success).toBe(false);
 });
+it.each(['https://chatgpt.com/c/123', 'https://chat.openai.com/', 'https://claude.ai/chat/123',
+ 'https://gemini.google.com/app', 'http://localhost:8787', 'http://127.0.0.1:3000', 'http://10.1.2.3',
+ 'http://192.168.1.1', 'http://172.16.0.1', 'http://169.254.1.1', 'http://[::1]', 'https://app.internal/', 'http://intranet/', 'http://host.local/'])('acesso amplo não libera a leitura de %s', url => {
+ expect(allowedPage(url)).toBe(false);
+});

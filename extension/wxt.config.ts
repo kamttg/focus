@@ -3,8 +3,8 @@ export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   manifest: {
     name: 'Fio — AI Focus Companion',
-    description: 'Lembretes gentis a partir do contexto de páginas que você autoriza.',
-    version: '0.1.2',
+    description: 'Analisa páginas durante suas sessões e lembra gentilmente do seu objetivo.',
+    version: '0.2.0',
     minimum_chrome_version: '120',
     permissions: ['storage', 'tabs', 'scripting', 'idle', 'alarms', 'notifications'],
     optional_host_permissions: ['http://*/*', 'https://*/*'],

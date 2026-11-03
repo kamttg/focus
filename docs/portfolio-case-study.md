@@ -6,7 +6,7 @@ Um domínio pode conter material útil e entretenimento. Bloqueios fixos não ex
 
 ## Solução implementada
 
-Chrome Extension MV3 com React e Worker serverless. A pessoa define objetivo e temas, escolhe duração, autoriza origens e recebe sinalizações não punitivas. O fluxo observar → interpretar → decidir → lembrar → incorporar feedback combina automação por eventos com IA. Não há autonomia completa nem agente com ferramentas de navegação.
+Chrome Extension MV3 com React e Worker serverless. A pessoa define objetivo e temas, escolhe duração, ativa a leitura automática uma vez e recebe sinalizações não punitivas. O fluxo observar → interpretar → decidir → lembrar → incorporar feedback combina automação por eventos com IA. Não há autonomia completa nem agente com ferramentas de navegação.
 
 ## Decisões
 
@@ -14,7 +14,7 @@ Chrome Extension MV3 com React e Worker serverless. A pessoa define objetivo e t
 - Feedback humano supera a IA durante a sessão.
 - Separação entre coleta, classificador e motor de decisão.
 - Chave apenas no servidor; JWT e cota antes de endpoint público.
-- Permissão por origem e extração minimizada, com limites explícitos.
+- Permissão inicial explícita, exclusões e extração minimizada, com limites explícitos.
 - Subcontagem deliberada em lacunas de atividade para evitar métricas enganosas.
 - Sem ranking ou índice de produtividade.
 

@@ -36,3 +36,9 @@ it('429 da cota não chama IA', async () => {
  const limits = { ...env, QUOTAS: { idFromName: () => 'id', get: () => ({ fetch: async () => new Response('{}', { status: 429 }) }) } } as unknown as Env;
  expect((await api.fetch(req(), limits)).status).toBe(429); expect(transport).not.toHaveBeenCalled();
 });
+it.each(['chatgpt.com', 'claude.ai', 'app.internal', 'host.local'])('o servidor também exclui %s mesmo com corpo válido', async domain => {
+ const transport = vi.fn(); vi.stubGlobal('fetch', transport);
+ const response = await api.fetch(req({ ...input, page: { ...input.page, domain } }), env);
+ expect(response.status).toBe(400); expect((await response.json()).error).toBe('excluded');
+ expect(transport).not.toHaveBeenCalled();
+});

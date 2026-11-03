@@ -1,8 +1,13 @@
-export const sensitiveHosts = /(^|\.)(gmail\.com|mail\.google\.com|outlook\.(com|live\.com)|proton\.me|protonmail\.com|web\.whatsapp\.com|messenger\.com|discord\.com|slack\.com|teams\.microsoft\.com|docs\.google\.com|drive\.google\.com|notion\.so|notion\.site|dropbox\.com|1password\.com|bitwarden\.com|lastpass\.com|paypal\.com|stripe\.com|nubank\.com\.br|itau\.com\.br|bb\.com\.br|bradesco\.com\.br|santander\.com\.br|chase\.com|bankofamerica\.com|mychart\.com|health\.google|accounts\.google\.com|login\.microsoftonline\.com)$/i;
+export const sensitiveHosts = /(^|\.)(gmail\.com|mail\.google\.com|outlook\.(com|live\.com)|proton\.me|protonmail\.com|web\.whatsapp\.com|messenger\.com|discord\.com|slack\.com|teams\.microsoft\.com|docs\.google\.com|drive\.google\.com|notion\.so|notion\.site|dropbox\.com|chatgpt\.com|chat\.openai\.com|claude\.ai|gemini\.google\.com|copilot\.microsoft\.com|1password\.com|bitwarden\.com|lastpass\.com|paypal\.com|stripe\.com|nubank\.com\.br|itau\.com\.br|bb\.com\.br|bradesco\.com\.br|santander\.com\.br|chase\.com|bankofamerica\.com|mychart\.com|health\.google|accounts\.google\.com|login\.microsoftonline\.com)$/i;
+export function isPrivateHost(hostname: string) {
+  return !hostname.includes('.') || hostname === '0.0.0.0' || hostname === '[::1]' ||
+    /(^|\.)(localhost|local|internal|lan)$/.test(hostname) ||
+    /^(10\.|127\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
+}
 export function allowedPage(raw: string, exclusions: string[] = []): boolean {
   try {
     const u = new URL(raw);
-    return ['https:', 'http:'].includes(u.protocol) && !u.username && !u.password &&
+    return ['https:', 'http:'].includes(u.protocol) && !u.username && !u.password && !isPrivateHost(u.hostname) &&
       !sensitiveHosts.test(u.hostname) &&
       !/(^|[./_-])(bank|banking|banco|health|saude|patient|medical|webmail|mail|login|signin|sign-in|checkout|payment|password|account|auth|inbox|messages|direct|chat)([./_-]|$)/i.test(u.hostname + u.pathname) &&
       !exclusions.some(h => u.hostname === h || u.hostname.endsWith('.' + h));

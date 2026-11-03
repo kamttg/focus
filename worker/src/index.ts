@@ -1,5 +1,5 @@
 import { requestSchema, uncertain } from '../../shared/contracts';
-import { sensitiveHosts } from '../../extension/lib/privacy';
+import { allowedPage } from '../../extension/lib/privacy';
 import { authenticate } from './auth';
 import { consumeQuota } from './limits';
 import { OpenAIProvider } from './openai';
@@ -43,7 +43,7 @@ export default {
     let input;
     try { input = requestSchema.parse(JSON.parse(await boundedBody(request))); }
     catch { return reply({ error: 'invalid_request' }, 400); }
-    if (sensitiveHosts.test(input.page.domain)) return reply({ error: 'excluded' }, 400);
+    if (!allowedPage('https://' + input.page.domain)) return reply({ error: 'excluded' }, 400);
     try {
       const quota = await consumeQuota(user, env);
       if (!quota.ok) return reply({ error: 'quota_exceeded' }, 429);

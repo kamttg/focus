@@ -1,6 +1,6 @@
 # Fio — AI Focus Companion
 
-Extensão de foco contextual: você define uma intenção, autoriza uma origem e recebe lembretes gentis quando a IA identifica conteúdo provavelmente fora do tema. Dois vídeos do mesmo domínio podem ter classificações distintas. Não bloqueia páginas, não mede atenção e não faz diagnósticos.
+Extensão de foco contextual: você define uma intenção, ativa a leitura automática uma vez e recebe lembretes gentis quando a IA identifica conteúdo provavelmente fora do tema. Dois vídeos do mesmo domínio podem ter classificações distintas. Não bloqueia páginas, não mede atenção e não faz diagnósticos.
 
 [![Validate Fio](https://github.com/kamttg/focus/actions/workflows/ci.yml/badge.svg)](https://github.com/kamttg/focus/actions/workflows/ci.yml)
 
@@ -8,7 +8,7 @@ Extensão de foco contextual: você define uma intenção, autoriza uma origem e
 
 - Chrome Manifest V3 com WXT, React, TypeScript e Tailwind.
 - Sessões de estudo, trabalho ou atividade personalizada; duração indefinida ou 25/50/90 minutos; pausa, retomada e término.
-- Consentimento informado e autorização opcional por origem; revogação, exclusões e exclusão de dados.
+- Consentimento informado e uma autorização inicial de acesso HTTP/HTTPS; leitura automática, desativação, exclusões e exclusão de dados.
 - Extração de até 1.500 caracteres, sem formulários, áreas editáveis e regiões privadas conhecidas.
 - Worker com Responses API, saída estruturada, validação, fallback uncertain, autenticação JWT e cotas atômicas por usuário.
 - Cache temporário por hash de objetivo/contexto, estabilização, backoff e limites locais.
@@ -40,7 +40,7 @@ npm run dev
 2. Abra chrome://extensions, ative o modo de desenvolvedor e carregue extension/.output/chrome-mv3-dev. Para build estável, use npm run build e carregue extension/.output/chrome-mv3.
 3. Copie o ID da extensão para ALLOWED_ORIGINS em worker/.dev.vars (chrome-extension://ID). Reinicie o Wrangler.
 4. Nas configurações do Fio, mantenha http://localhost:8787 como backend, aceite o consentimento e salve. Essa ação solicita acesso ao endpoint.
-5. Abra uma página pública, inicie a sessão e clique em Autorizar site atual. A análise depende também de o Worker estar habilitado.
+5. Abra uma página pública, inicie a sessão, confirme a leitura automática e aceite o acesso aos sites uma única vez. Depois navegue entre páginas e domínios sem liberações individuais. A análise depende também de o Worker estar habilitado.
 
 O modo AUTH_MODE=local funciona exclusivamente em URLs localhost/127.0.0.1. Um deploy remoto nesse modo rejeita autenticação.
 
@@ -55,7 +55,7 @@ O código está pronto para configuração; publicar o repositório não provisi
 3. Em worker/wrangler.jsonc configure AUTH_MODE=jwt, AUTH_ISSUER=https://SEU-PROJETO.supabase.co/auth/v1, AUTH_AUDIENCE=authenticated e ALLOWED_ORIGINS=chrome-extension://ID. Liste origens exatas separadas por vírgula.
 4. Execute npx wrangler secret put OPENAI_API_KEY dentro de worker/. Configure cotas e ENABLED=true apenas quando estiver pronto.
 5. Execute npm run deploy -w worker. O Durable Object mantém somente contadores por identidade.
-6. Na extensão, informe o endpoint HTTPS, a URL do Supabase e a chave pública publishable/anon. Salve, entre com uma conta previamente criada e autorize apenas os sites desejados.
+6. Na extensão, informe o endpoint HTTPS, a URL do Supabase e a chave pública publishable/anon. Salve, entre com uma conta previamente criada e ative a leitura automática. Gerencie exceções na lista de sites excluídos.
 7. Configure orçamento e alertas de gasto no provedor. ENABLED=false é a desativação emergencial. O limite diário aplica-se por usuário; o orçamento global depende do provedor.
 
 JWT é verificado por assinatura, issuer, audience, sub e exp. CORS sozinho não autentica. A chave OpenAI nunca entra na extensão. JWT e refresh token ficam em chrome.storage.session, restrito aos contextos confiáveis. Reiniciar o navegador exige novo login.
@@ -84,7 +84,7 @@ O [workflow](.github/workflows/ci.yml) executa essas etapas e publica fio-chrome
 - Pausar congela a duração fixa; tempo de espera da IA não entra no desvio.
 - O Chrome oferece no máximo dois botões por notificação: Faz parte e Adiar. Clique no corpo para abrir o popup; o overlay oferece também Voltar, Ignorar e Pausar.
 - Voltar ao foco só ativa a aba indicada explicitamente ao iniciar a sessão. Se ela tiver sido fechada, a extensão não navega por conta própria.
-- Permissões e filtros reduzem exposição; não detectam todo conteúdo sensível. Não autorize páginas privadas ou serviços com dados pessoais.
+- Permissões e filtros reduzem exposição; não detectam todo conteúdo sensível. Use exclusões ou pause a sessão ao acessar páginas privadas que os filtros não reconheçam.
 - Não há publicação na Chrome Web Store, site público, vídeo gravado ou resultados de pesquisa com participantes.
 - Não há sincronização nem telemetria. A cota local não é mecanismo de segurança; a cota do Worker é.
 
@@ -133,3 +133,11 @@ Em origens consentidas, autorizadas e não sensíveis, a extensão verifica docu
 O popup mantém visível o último resultado recebido durante pausas de foco, mostra erros seguros de autenticação, crédito, modelo, quota e conexão, e oferece um diagnóstico sem prompts nem chaves. O botão Testar aviso (sem IA) exibe uma prévia explicitamente rotulada, sem chamada ao provedor, sem alterar classificação e sem consumir cooldown. Ele não comprova classificação semântica.
 
 O servidor reserva até 1500 tokens quando reasoning low está configurado (500 com none), incluindo o orçamento de raciocínio. Respostas incompletas ou recusadas continuam sem alertas. Nenhuma mensagem bruta do provedor é refletida no cliente ou registrada em logs.
+
+## Versão 0.2.0 — leitura automática durante a sessão
+
+Na primeira ativação, a pessoa confirma o envio limitado de contexto e o Chrome solicita acesso HTTP/HTTPS uma única vez. A permissão é opcional na instalação e só é solicitada em um clique explícito. Depois disso, iniciar ou retomar uma sessão não exige autorizar cada domínio; o Fio observa a aba ativa, aplica exclusões, estabiliza o conteúdo e consulta a IA quando necessário.
+
+Permissões individuais antigas não são convertidas silenciosamente em acesso global. Instalações anteriores exibem Ativar leitura automática e pedem a nova autorização. Recusar mantém a leitura desativada. Nas configurações, Desativar leitura automática pausa a sessão e remove o acesso amplo. Revogação no Chrome também interrompe novas análises.
+
+E-mails, bancos, conversas (inclusive ChatGPT, Claude e Gemini), páginas de login, campos privados, rede local, origens excluídas e navegação anônima ficam fora da coleta. Os filtros não detectam todo conteúdo privado da web. Uma autorização ampla é uma capacidade técnica maior que os dados efetivamente extraídos; a interface explica essa diferença antes da ativação.

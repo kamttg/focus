@@ -17,7 +17,7 @@ export interface Session {
   analyses: number; alerts: number; corrections: number;
 }
 export interface CacheEntry { result: Classification; expiresAt: number }
-export type MonitoringReason = 'consent_required' | 'no_active_tab' | 'window_unfocused' | 'idle' | 'excluded' | 'permission_required' | 'extraction_unavailable';
+export type MonitoringReason = 'consent_required' | 'automatic_access_required' | 'no_active_tab' | 'window_unfocused' | 'idle' | 'excluded' | 'permission_required' | 'extraction_unavailable';
 export interface RuntimeState {
   session: Session | null; clock: Clock; tabId: number | null; url: string; domain: string;
   classification: Classification | null; status: string; revision: number; focused: boolean; idle: boolean;

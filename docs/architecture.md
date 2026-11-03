@@ -6,8 +6,8 @@ flowchart TD
   BG --> LOCAL[Preferências em storage.local]
   BG --> SESSION[Estado e cache em storage.session]
   EVENTS[Abas / janelas / idle / alarmes] --> BG
-  BG --> POLICY[Consentimento + origem + exclusões]
-  POLICY -->|somente origem autorizada| EXTRACT[Injeção isolada / extrator limitado]
+  BG --> POLICY[Consentimento + acesso HTTP/HTTPS + exclusões]
+  POLICY -->|somente página elegível após ativação| EXTRACT[Injeção isolada / extrator limitado]
   EXTRACT --> HASH[Hash SHA-256 + cache TTL]
   HASH -->|sem cache e dentro da cota| API[Worker HTTPS]
   API --> AUTH[JWT + Durable Object de cotas]
@@ -27,7 +27,7 @@ O service worker serializa eventos e persistência. Chamadas externas ocorrem fo
 
 ## Tempo
 
-O contador avança com timestamps quando a sessão está ativa, a janela normal tem foco, o sistema está ativo e a classe é off_topic com confiança >= 0,8. A espera pela IA não conta. Abas diferentes e conteúdo relevante zeram o desvio contínuo; totais agregados podem permanecer na sessão.
+O contador avança com timestamps quando a sessão está ativa, a janela ou a própria página confirma foco, a página está visível, o sistema está ativo e a classe é off_topic com confiança >= 0,8. A espera pela IA não conta. Abas diferentes e conteúdo relevante zeram o desvio contínuo; totais agregados podem permanecer na sessão.
 
 A cada 30 segundos um alarme reconcilia o estado. SetTimeout é apenas otimização para a estabilização; existe também um alarme persistente. Ao iniciar uma nova instância do worker, o intervalo anterior é descartado por segurança e o contexto é reavaliado. Lacunas acima de 45 segundos não são somadas.
 
@@ -45,4 +45,8 @@ O observador é injetado apenas após autorização. Eventos de histórico, tít
 
 Supabase OTP fornece JWT assimétrico. O Worker verifica JWKS do issuer configurado, audience e expiração. Falhas produzem uncertain, nunca off_topic por falta de rede. Limites atômicos no Durable Object contam tentativas, inclusive falhas do provedor, para proteger custos.
 
-WXT gera o manifesto a partir de entrypoints e wxt.config.ts. Não há content script registrado em todos os sites; a extração e o overlay usam scripting.executeScript em origens previamente autorizadas.
+WXT gera o manifesto a partir de entrypoints e wxt.config.ts. Não há content script registrado em todos os sites; a extração e o overlay usam scripting.executeScript em origens cobertas pela autorização inicial e aprovadas pelas exclusões.
+
+## Ativação única
+
+O popup solicita as permissões HTTP/HTTPS opcionais diretamente no gesto de ativação, depois do consentimento. O backend local do navegador revalida o acesso global antes de iniciar e antes de cada coleta. Não há lista de domínios a liberar durante a navegação. A interface oferece desativação global e exclusões por domínio. O classificador continua interpretando o conteúdo, não regras de domínio para relevância.

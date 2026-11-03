@@ -1,6 +1,7 @@
 import { isTrustedUI } from '../lib/message-security';
 import { readBrowserEnvironment } from '../lib/browser-environment';
 import { probePageFocus } from '../lib/page-focus';
+import { hasAutomaticAccess } from '../lib/permissions';
 import { safeAnalysisError } from '../../shared/analysis-errors';
 import { defaults, initialState, hashContext, cached, type RuntimeState, type Preferences } from '../lib/session';
 import { accrue, resetContinuous, shouldAlert } from '../lib/decision-engine';
@@ -64,7 +65,7 @@ export default defineBackground(() => {
     }
   }
   async function eligible(url: string) {
-    return prefs.consent && allowedPage(url, prefs.exclusions) &&
+    return prefs.consent && allowedPage(url, prefs.exclusions) && await hasAutomaticAccess() &&
       await chrome.permissions.contains({ origins: [originPattern(url)] });
   }
   async function syncEnvironment() {
@@ -104,11 +105,12 @@ export default defineBackground(() => {
     state.tabId = tab?.id ?? null; state.url = url;
     try { state.domain = new URL(url).hostname; } catch { state.domain = ''; }
     state.status = active() ? 'waiting' : (state.session?.status || 'inactive');
-    if (!tab) state.monitoringReason = 'no_active_tab';
-    else if (!state.focused) state.monitoringReason = 'window_unfocused';
-    else if (state.idle) state.monitoringReason = 'idle';
+    if (!(await hasAutomaticAccess())) state.monitoringReason = 'automatic_access_required';
+    else if (!tab) state.monitoringReason = 'no_active_tab';
     else if (!allowedPage(url, prefs.exclusions)) state.monitoringReason = 'excluded';
     else if (!(await eligible(url))) state.monitoringReason = 'permission_required';
+    else if (!state.focused) state.monitoringReason = 'window_unfocused';
+    else if (state.idle) state.monitoringReason = 'idle';
     if (state.monitoringReason) state.status = 'not_monitored';
     // A toolbar popup or focus change must not erase the last known result
     // for the same tab. This is display-only while focus/activity is absent.
@@ -242,7 +244,7 @@ export default defineBackground(() => {
           tick(); await save();
           const auth = (await chrome.storage.session.get('auth')).auth;
           const origins = (await chrome.permissions.getAll()).origins || [];
-          return { state, prefs, origins, signedIn: !!auth };
+          return { state, prefs, origins, signedIn: !!auth, automaticAccess: await hasAutomaticAccess() };
         }
         case 'SAVE': {
           const next = { ...prefs, ...message.preferences };
@@ -256,6 +258,7 @@ export default defineBackground(() => {
         }
         case 'START': {
           if (!prefs.consent) throw new Error('Leia e aceite a explicação de privacidade.');
+          if (!(await hasAutomaticAccess())) throw new Error('Ative a leitura automática e autorize o acesso aos sites antes de iniciar a sessão.');
           const parsed = requestSchema.pick({ goal: true, topics: true }).parse({ goal: message.goal, topics: message.topics });
           if (!['study', 'work', 'custom'].includes(message.kind)) throw new Error('Atividade inválida.');
           const duration = Number(message.duration);
@@ -278,7 +281,7 @@ export default defineBackground(() => {
         case 'RETRY': await observe(); return { ok: true };
         case 'PREVIEW_REMINDER': {
           const tab = (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
-          if (!tab?.id || tab.incognito || !(await eligible(tab.url || ''))) throw new Error('Autorize esta página pública e confirme o consentimento antes de testar o aviso.');
+          if (!tab?.id || tab.incognito || !(await eligible(tab.url || ''))) throw new Error('Ative a leitura automática e teste em uma página pública que não esteja nas exclusões.');
           await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: showOverlay,
             args: [state.session?.goal || 'Seu objetivo', 'Esta prévia não consulta a IA e não altera a classificação.', false, true] });
           return { ok: true };
@@ -289,7 +292,7 @@ export default defineBackground(() => {
         case 'DEBUG': {
           if (!prefs.consent) throw new Error('Consentimento necessário.');
           const tab = (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
-          if (!tab?.id || tab.incognito || !(await eligible(tab.url || ''))) throw new Error('Origem não autorizada ou excluída.');
+          if (!tab?.id || tab.incognito || !(await eligible(tab.url || ''))) throw new Error('Ative a leitura automática e escolha uma página que não esteja nas exclusões.');
           return (await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: extractPageContext }))[0]?.result || null;
         }
         case 'AUTH': {
@@ -325,7 +328,8 @@ export default defineBackground(() => {
   chrome.tabs.onRemoved.addListener(id => { if (id === state.tabId) void run(observe); });
   chrome.windows.onFocusChanged.addListener(() => { void run(observe); });
   chrome.idle.onStateChanged.addListener(() => { void run(observe); });
-  chrome.permissions.onRemoved.addListener(() => { void run(async () => { state.cache = {}; await observe(); }); });
+  chrome.permissions.onAdded.addListener(() => { void run(observe); });
+  chrome.permissions.onRemoved.addListener(() => { void run(async () => { cancelRequests(); state.cache = {}; await observe(); }); });
   chrome.alarms.onAlarm.addListener(alarm => {
     void run(async () => {
       if (alarm.name === 'fio-stable') { await analyze(); return; }

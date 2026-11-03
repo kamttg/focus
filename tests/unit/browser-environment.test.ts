@@ -48,7 +48,7 @@ describe('seleção da aba e foco do navegador', () => {
     expect((await readBrowserEnvironment(browser)).idle).toBe(true);
   });
   it('separa falta de permissão, consentimento e foco nos textos apresentados', () => {
-    expect(monitoringMessages.permission_required.title).toBe('Autorize este site');
+    expect(monitoringMessages.automatic_access_required.title).not.toBe(monitoringMessages.window_unfocused.title);
     expect(monitoringMessages.window_unfocused.title).not.toBe(monitoringMessages.permission_required.title);
     expect(monitoringMessages.consent_required.description).toContain('consentimento');
   });

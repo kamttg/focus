@@ -15,7 +15,7 @@ test.beforeAll(async () => {
  expect(manifest.optional_host_permissions).toContain('https://*/*');
  // Só a cópia de teste recebe origens pré-concedidas; o build distribuído continua opcional.
  const extensionPath = path.join(profile, 'test-extension'); await cp(original, extensionPath, { recursive: true });
- manifest.host_permissions = ['https://public.example.test/*', 'http://127.0.0.1/*'];
+ manifest.host_permissions = ['http://*/*', 'https://*/*'];
  await writeFile(path.join(extensionPath, 'manifest.json'), JSON.stringify(manifest));
  server = createServer(async (req, res) => {
    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
@@ -38,6 +38,9 @@ test.beforeAll(async () => {
  });
  worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
  id = new URL(worker.url()).host;
+ // CDP input does not consistently reset the OS idle timer in Xvfb.
+ // These E2E scenarios assume an active person; idle rules are covered in Vitest.
+ await worker.evaluate(() => { chrome.idle.queryState = async () => 'active'; });
 });
 test.beforeEach(async ({}, info) => {
  const control = await context.newPage(); await control.goto('chrome-extension://' + id + '/options.html');
@@ -66,20 +69,30 @@ test('sessão real: consentimento, início, pausa, retomada e limpeza do cache',
  await page.screenshot({ path: 'docs/screenshots/popup.png', fullPage: true });
  await page.close();
 });
-test('sem permissão de origem: nenhuma extração ou chamada à API', async () => {
- const site = await context.newPage();
- await site.route('https://unauthorized.example.test/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Pandas</title><main><h1>DataFrame</h1><p>Limpeza de dados</p></main>' }));
- await site.goto('https://unauthorized.example.test/tutorial');
- const popup = await context.newPage(); await popup.goto('chrome-extension://' + id + '/popup.html');
- await popup.getByLabel('Tema e objetivo').fill('Estudar Pandas');
- await popup.getByRole('button', { name: 'Iniciar sessão' }).click();
- await expect(popup.getByRole('button', { name: 'Pausar', exact: true })).toBeVisible();
- await site.bringToFront();
- await expect.poll(() => worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime.status)).toBe('not_monitored');
- const state = await worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime);
- expect(state.session.analyses).toBe(0); expect(state.classification).toBeNull();
- await popup.bringToFront(); await popup.getByRole('button', { name: 'Encerrar sessão' }).click();
- await popup.close(); await site.close();
+test('sem autorização inicial o pacote real não inicia coleta ou consulta à IA', async () => {
+ const isolatedProfile = await mkdtemp(path.join(tmpdir(), 'fio-no-access-'));
+ const original = path.resolve('extension/.output/chrome-mv3');
+ const isolated = await chromium.launchPersistentContext(isolatedProfile, { channel: 'chromium', headless: false,
+   args: ['--disable-extensions-except=' + original, '--load-extension=' + original] });
+ try {
+   const background = isolated.serviceWorkers()[0] || await isolated.waitForEvent('serviceworker');
+   const isolatedId = new URL(background.url()).host;
+   const site = await isolated.newPage();
+   await site.route('https://unauthorized.example.test/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Pandas</title><main><p>CONTEUDO_SEM_AUTORIZACAO</p></main>' }));
+   await site.goto('https://unauthorized.example.test/tutorial');
+   const popup = await isolated.newPage(); await popup.goto('chrome-extension://' + isolatedId + '/popup.html');
+   const count = requests.length;
+   const result = await popup.evaluate(async () => {
+     await chrome.runtime.sendMessage({ type: 'SAVE', preferences: { consent: true } });
+     return chrome.runtime.sendMessage({ type: 'START', goal: 'Estudar Pandas', topics: [], kind: 'study', duration: 0 });
+   });
+   expect(result.ok).toBe(false); expect(result.error).toContain('leitura automática');
+   const data = await popup.evaluate(() => chrome.runtime.sendMessage({ type: 'GET' }));
+   expect(data.result.automaticAccess).toBe(false);
+   expect(data.result.state.session).toBeNull();
+   expect(data.result.state.classification).toBeNull();
+   expect(requests.length).toBe(count);
+ } finally { await isolated.close(); await rm(isolatedProfile, { recursive: true, force: true }); }
 });
 test('extrator no Chromium real não inclui campos e conteúdos invisíveis', async () => {
  const page = await context.newPage();
@@ -306,4 +319,57 @@ test('prévia visual funciona sem IA e não altera classificação, chamadas ou 
  expect(requests.length).toBe(calls);
  await site.screenshot({ path: 'docs/screenshots/preview.png', fullPage: true });
  await control.close(); await site.close();
+});
+
+test('após a ativação inicial troca de domínio e analisa automaticamente sem novas liberações', async () => {
+ const site = await context.newPage();
+ await site.route('https://public.example.test/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Tutorial Pandas</title><main><h1>Pandas</h1><p>Dados públicos para estudo.</p></main>' }));
+ await site.route('https://another.example.test/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Humor de gatos</title><main><h1>Entretenimento</h1><p>Outro domínio, fora do tema de estudo.</p></main>' }));
+ await site.goto('https://public.example.test/automatic');
+ const control = await context.newPage(); await control.goto('chrome-extension://' + id + '/popup.html');
+ await control.getByLabel('Tema e objetivo').fill('Estudar Pandas');
+ await control.getByRole('button', { name: 'Iniciar sessão' }).click();
+ await expect(control.getByRole('button', { name: 'Pausar', exact: true })).toBeVisible();
+ await expect(control.getByRole('button', { name: 'Autorizar site atual', exact: true })).toHaveCount(0);
+ await site.bringToFront();
+ const state = () => worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime);
+ await expect.poll(async () => (await state()).classification?.label, { timeout: 15000 }).toBe('relevant');
+ await site.goto('https://another.example.test/automatic');
+ await expect.poll(async () => (await state()).classification?.label, { timeout: 15000 }).toBe('off_topic');
+ expect((await state()).domain).toBe('another.example.test');
+ await expect(site.locator('#__fio_overlay')).toBeAttached();
+ await control.bringToFront(); await control.evaluate(() => chrome.runtime.sendMessage({ type: 'FINISH' }));
+ await control.close(); await site.close();
+});
+
+test('remover acesso amplo interrompe análises mesmo quando uma origem ainda consta como permitida', async () => {
+ const site = await context.newPage();
+ await site.route('https://public.example.test/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Tutorial Pandas</title><main><h1>Pandas</h1><p>Página de estudo controlada.</p></main>' }));
+ await site.goto('https://public.example.test/revoke-global');
+ const control = await context.newPage(); await control.goto('chrome-extension://' + id + '/popup.html');
+ await control.getByLabel('Tema e objetivo').fill('Estudar Pandas');
+ await control.getByRole('button', { name: 'Iniciar sessão' }).click();
+ await expect(control.getByRole('button', { name: 'Pausar', exact: true })).toBeVisible();
+ await site.bringToFront();
+ const state = () => worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime);
+ await expect.poll(async () => (await state()).classification?.label, { timeout: 15000 }).toBe('relevant');
+ const analyses = (await state()).session.analyses;
+ await worker.evaluate(() => {
+   const scope = globalThis as any;
+   scope.__fioContains = chrome.permissions.contains.bind(chrome.permissions);
+   chrome.permissions.contains = (async (query: chrome.permissions.Permissions) => query.origins?.includes('https://*/*') ? false : scope.__fioContains(query)) as typeof chrome.permissions.contains;
+ });
+ try {
+   const response = await control.evaluate(() => chrome.runtime.sendMessage({ type: 'RETRY' }));
+   expect(response.ok).toBe(true);
+   await expect.poll(async () => (await state()).monitoringReason).toBe('automatic_access_required');
+   await site.goto('https://public.example.test/other-after-revocation');
+   await site.waitForTimeout(3500);
+   expect((await state()).session.analyses).toBe(analyses);
+   expect((await state()).classification).toBeNull();
+ } finally {
+   await worker.evaluate(() => { chrome.permissions.contains = (globalThis as any).__fioContains; delete (globalThis as any).__fioContains; });
+   await control.bringToFront(); await control.evaluate(() => chrome.runtime.sendMessage({ type: 'FINISH' }));
+   await control.close(); await site.close();
+ }
 });

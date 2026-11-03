@@ -2,7 +2,7 @@
 
 ## O que cada camada comprova
 
-Vitest verifica contratos, extração e redação, exclusões, tempo ativo, suspensão/lacunas, limiares, cache, payload mínimo, Responses API, fallback e bloqueio remoto do modo local. Playwright carrega a extensão compilada no Chromium e verifica consentimento, sessões, privacidade do extrator em DOM real e ausência de análise em origem não autorizada.
+Vitest verifica contratos, extração e redação, exclusões, tempo ativo, suspensão/lacunas, limiares, cache, payload mínimo, Responses API, fallback e bloqueio remoto do modo local. Playwright carrega a extensão compilada no Chromium e verifica consentimento, sessões, privacidade do extrator em DOM real e ausência de análise em ausência da autorização inicial.
 
 Esses testes usam respostas de IA simuladas. Eles não demonstram precisão semântica, resistência real do modelo a prompt injection ou eficácia no foco.
 
@@ -16,7 +16,7 @@ Inclua: dois conteúdos no mesmo domínio; relação indireta; página curta; pr
 
 1. Habilite Worker local e forneça uma chave válida.
 2. Configure um modelo disponível e registre seu identificador, data e nível de reasoning.
-3. Inicie “Estudar Python e Pandas”. Autorize um domínio público.
+3. Inicie “Estudar Python e Pandas”. Ative a leitura automática e aceite a autorização inicial do Chrome.
 4. Abra um tutorial de DataFrame; registre classe e justificativa.
 5. Abra conteúdo claramente de entretenimento no mesmo domínio; registre classe e aguarde o lembrete.
 6. Teste “Faz parte da tarefa” e confirme que futuras análises não anulam a correção.
@@ -43,3 +43,5 @@ Calcule precisão de alertas = TP/(TP+FP), separando uncertain de erros. Não tr
 - Revogar a origem deve impedir nova extração e invalidar resultado pendente.
 - SPA deve estabilizar novamente após mudança significativa.
 - O build do cliente não pode conter chave OpenAI, service_role ou .dev.vars.
+
+O teste de início sem acesso utiliza o pacote distribuído original, sem permissões de host pré-concedidas. Os demais cenários Chromium recebem o acesso amplo na cópia de teste para simular a confirmação inicial, sem automatizar cliques no diálogo nativo do Chrome. Recusa e escopo da solicitação também têm testes unitários. Uma troca de domínio verifica classificação e lembrete sem uma nova solicitação; revogação é simulada no cenário de interrupção para testar o motor.

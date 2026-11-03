@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { rpc, type Snapshot } from '../../lib/rpc';
-import { originPattern, allowedPage } from '../../lib/privacy';
+import { requestAutomaticAccess } from '../../lib/permissions';
 import { Brand, Button, statuses } from '../../components/ui';
 import { monitoringMessages } from '../../lib/monitoring-status';
 export default function App() {
@@ -28,21 +28,20 @@ export default function App() {
   async function start(event: FormEvent) {
     event.preventDefault();
     await perform(async () => {
-      await rpc('SAVE', { preferences: { consent: snapshot?.prefs.consent || consent, delayMinutes: Number(delay) } });
+      if (needsConsent && !consent) throw new Error('Confirme a leitura automática antes de iniciar.');
+      if (!snapshot?.automaticAccess) await requestAutomaticAccess();
+      await rpc('SAVE', { preferences: { consent: needsConsent ? consent : snapshot?.prefs.consent, delayMinutes: Number(delay) } });
       await rpc('START', { goal, topics: topics.split(',').map(t => t.trim()).filter(Boolean), kind, duration: Number(duration), useCurrentTab: reference });
     });
   }
-  async function authorize() {
-    // permissions.request deve decorrer diretamente de um gesto da pessoa.
-    const tab = (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
-    if (!tab?.url || tab.incognito || !allowedPage(tab.url, snapshot?.prefs.exclusions)) throw new Error('Esta página é interna, sensível ou excluída.');
-    if (!snapshot?.prefs.consent) throw new Error('Aceite a explicação de privacidade antes de autorizar.');
-    const ok = await chrome.permissions.request({ origins: [originPattern(tab.url)] });
-    if (!ok) throw new Error('Permissão não concedida. A página continua sem análise.');
-    await rpc('RETRY');
+  async function activateAutomatic() {
+    if (!consent) throw new Error('Confirme a leitura automática antes de ativar.');
+    if (!snapshot?.automaticAccess) await requestAutomaticAccess();
+    await rpc('SAVE', { preferences: { consent: true } });
   }
   const s = snapshot?.state.session;
   const running = s && s.status !== 'finished';
+  const needsConsent = !!snapshot && (!snapshot.prefs.consent || !snapshot.automaticAccess);
   const monitoring = snapshot?.state.status === 'not_monitored' && snapshot.state.monitoringReason
     ? monitoringMessages[snapshot.state.monitoringReason] : null;
   const previousResult = !!(snapshot?.state.classification && snapshot.state.status === 'not_monitored' &&
@@ -52,6 +51,11 @@ export default function App() {
     {!snapshot ? <p role="status">Abrindo o Fio…</p> : running ? <>
       <p className="text-xs tracking-widest text-leaf mb-2">SUA INTENÇÃO AGORA</p>
       <h1>{s.goal}</h1><p className="hint mb-5">{s.topics.join(' · ') || 'Uma tarefa de cada vez.'}</p>
+      {needsConsent && <section className="card"><h2>Ativar leitura automática</h2>
+        <p className="text-sm mb-3">Com uma autorização inicial do Chrome, o Fio analisa automaticamente a aba ativa durante a sessão. Até 1.500 caracteres visíveis e seu objetivo podem ser enviados ao servidor e à OpenAI. Sites sensíveis e excluídos ficam fora da análise.</p>
+        <label className="check"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />Entendi e aceito a análise automática durante as sessões.</label>
+        <Button disabled={busy || !consent} onClick={() => void perform(activateAutomatic)}>Ativar leitura automática</Button>
+      </section>}
       <section className="card" aria-live="polite">
         <span className="text-xs uppercase tracking-wide text-leaf">{s.status === 'paused' ? 'Pausado' : s.endsAt ? 'Sessão com duração fixa' : 'Duração indefinida'}</span>
         <h2 className="mt-2">{previousResult ? statuses[snapshot.state.classification!.label] : monitoring?.title || statuses[snapshot.state.status] || snapshot.state.status}</h2>
@@ -66,7 +70,6 @@ export default function App() {
       </section>
       <div className="flex gap-2 mb-4"><Button disabled={busy} onClick={() => void perform(() => rpc(s.status === 'paused' ? 'RESUME' : 'PAUSE'))}>{s.status === 'paused' ? 'Retomar' : 'Pausar'}</Button>
       <Button secondary disabled={busy} onClick={() => void perform(() => rpc('FINISH'))}>Encerrar sessão</Button></div>
-      {snapshot.state.status === 'not_monitored' && snapshot.state.monitoringReason === 'permission_required' && <Button secondary disabled={busy} onClick={() => void perform(authorize)}>Autorizar site atual</Button>}
       {snapshot.state.status === 'not_monitored' && <Button secondary disabled={busy} onClick={() => void perform(() => rpc('RETRY'))}>Verificar página novamente</Button>}
       <div className="mt-3"><Button secondary disabled={busy} onClick={() => void perform(() => rpc('PREVIEW_REMINDER'))}>Testar aviso (sem IA)</Button>
         <p className="hint mt-2">Depois de clicar, feche este popup para ver a prévia na página. Ela não altera a classificação nem o intervalo de silêncio.</p></div>
@@ -100,14 +103,14 @@ export default function App() {
         <div className="grid grid-cols-2 gap-3"><label>Duração<select value={duration} onChange={e => setDuration(e.target.value)}><option value="0">Indefinida</option>{[25, 50, 90].map(n => <option key={n} value={n}>{n} minutos</option>)}</select></label>
         <label>Avisar após<select value={delay} onChange={e => setDelay(e.target.value)}>{[0, 1, 3, 5, 10].map(n => <option key={n} value={n}>{n ? n + ' min fora do tema' : 'Sem espera adicional'}</option>)}</select></label></div>
         <label className="check"><input type="checkbox" checked={reference} onChange={e => setReference(e.target.checked)} />Usar a aba atual como referência para “Voltar ao foco”.</label>
-        {!snapshot.prefs.consent && <section className="card text-sm">
-          <h2>Você escolhe o que o Fio lê.</h2>
-          <p>Em sites autorizados, até 1.500 caracteres de título, cabeçalhos e trechos visíveis podem ser enviados, com seu objetivo, ao nosso backend e à OpenAI para analisar relevância.</p>
-          <p className="mt-2">A permissão “abas” permite observar URL e título da aba ativa. Conteúdo de campos, e-mails e páginas sensíveis é excluído. Os filtros têm limites: evite autorizar sites com dados privados.</p>
-          <p className="hint mt-2 mb-3">Não há monitoramento anônimo. store:false não garante retenção zero pelo provedor. Você pode pausar, revogar permissões e excluir dados nas configurações.</p>
-          <label className="check"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />Entendi e aceito a análise apenas nos sites que eu autorizar.</label>
+        {needsConsent && <section className="card text-sm">
+          <h2>Uma autorização. Leitura automática.</h2>
+          <p>Ao iniciar, o Chrome pedirá acesso aos sites uma única vez. Durante suas sessões, o Fio analisa automaticamente a aba ativa e compara o assunto com seu objetivo.</p>
+          <p className="mt-2">Até 1.500 caracteres de título, cabeçalhos e trechos visíveis podem ser enviados ao servidor e à OpenAI. A permissão “abas” permite observar URL e título. Bancos, e-mails, conversas, campos e sites excluídos ficam fora da análise.</p>
+          <p className="hint mt-2 mb-3">Os filtros não identificam todo conteúdo privado. Não há monitoramento anônimo nem análise após encerrar ou pausar. Você pode desativar a leitura automática e excluir os dados nas configurações. store:false não garante retenção zero pelo provedor.</p>
+          <label className="check"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />Entendi e aceito a análise automática durante as sessões.</label>
         </section>}
-        <Button type="submit" disabled={busy || (!snapshot.prefs.consent && !consent)}>Iniciar sessão</Button>
+        <Button type="submit" disabled={busy || (needsConsent && !consent)}>Iniciar sessão</Button>
       </form>
       {s?.status === 'finished' && <p className="hint mt-4">Sessão anterior: {s.analyses} análises, {s.alerts} lembretes e {s.corrections} correções. Cache descartado.</p>}
     </>}

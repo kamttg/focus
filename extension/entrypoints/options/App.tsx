@@ -3,11 +3,12 @@ import { rpc, type Snapshot } from '../../lib/rpc';
 import { defaults, type Preferences } from '../../lib/session';
 import { validEndpoint } from '../../lib/privacy';
 import { Brand, Button } from '../../components/ui';
+import { requestAutomaticAccess, removeAutomaticAccess } from '../../lib/permissions';
 export default function App() {
   const [prefs, setPrefs] = useState<Preferences>({ ...defaults });
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [message, setMessage] = useState(''); const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false); const [origin, setOrigin] = useState('');
+  const [busy, setBusy] = useState(false);
   const [email, setEmail] = useState(''); const [code, setCode] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const refresh = async () => { const data = await rpc<Snapshot>('GET'); setSnapshot(data); setPrefs(data.prefs); };
@@ -25,23 +26,25 @@ export default function App() {
     if (!(await chrome.permissions.request({ origins }))) throw new Error('Acesso ao backend não autorizado.');
     await rpc('SAVE', { preferences: prefs });
   }
-  async function grant() {
-    if (!prefs.consent) throw new Error('Aceite primeiro a explicação de privacidade.');
-    const u = new URL(origin);
-    if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password) throw new Error('Origem inválida.');
-    if (!(await chrome.permissions.request({ origins: [u.origin + '/*'] }))) throw new Error('Permissão não concedida.');
-    setOrigin(''); await rpc('RETRY');
+  async function activateAutomatic() {
+    if (!prefs.consent) throw new Error('Leia a explicação de privacidade e confirme o consentimento acima.');
+    await requestAutomaticAccess();
+    await rpc('SAVE', { preferences: prefs });
+  }
+  async function deactivateAutomatic() {
+    await rpc('PAUSE');
+    if (!(await removeAutomaticAccess())) throw new Error('A sessão foi pausada. Remova o acesso a sites nas configurações da extensão no Chrome.');
   }
   return <main className="max-w-3xl mx-auto p-6 md:p-10"><Brand /><h1>Seu espaço, suas escolhas.</h1>
     <p className="mb-7 text-stone-600">Controle os sites, os lembretes e os dados usados pelo Fio.</p>
     {error && <p role="alert" className="card border-amber-500">{error}</p>}
     {message && <p role="status" className="card border-leaf">{message}</p>}
     <section className="card"><h2>Privacidade e consentimento</h2>
-      <p className="text-sm mb-3">A extensão observa URL e título da aba ativa pela permissão “abas”. Em cada origem que você autoriza, lê até 1.500 caracteres de título, cabeçalhos e trechos visíveis e envia esse contexto e seu objetivo ao Worker e à OpenAI.</p>
-      <p className="text-sm mb-3">Não enviamos URL completa, histórico, HTML integral, campos de formulário ou identificadores de usuário da página. Os filtros excluem serviços sensíveis conhecidos e áreas privadas, mas não identificam todo conteúdo privado da internet. Autorize apenas páginas públicas adequadas.</p>
+      <p className="text-sm mb-3">Com sua autorização inicial de acesso aos sites, o Fio analisa automaticamente a aba ativa durante a sessão. A permissão “abas” permite observar URL e título. Até 1.500 caracteres de título, cabeçalhos e trechos visíveis são enviados, com seu objetivo, ao Worker e à OpenAI.</p>
+      <p className="text-sm mb-3">Não enviamos URL completa, histórico, HTML integral, campos de formulário ou identificadores de usuário da página. Bancos, e-mails, conversas, serviços sensíveis conhecidos e endereços de rede local são excluídos. Os filtros não identificam todo conteúdo privado da internet. Pausar ou encerrar a sessão interrompe a análise.</p>
       <p className="text-sm mb-3">Preferências ficam neste navegador. Cache de classificação e credenciais de login ficam na memória de sessão do Chrome. Trechos são descartados após uso. Não há modo anônimo nem sincronização. O provedor pode reter dados conforme suas políticas; store:false não garante retenção zero.</p>
       <a className="text-sm" href="https://platform.openai.com/docs/guides/your-data" target="_blank" rel="noreferrer">Consultar controles de dados da OpenAI</a>
-      <label className="check mt-4"><input type="checkbox" checked={prefs.consent} onChange={e => change('consent', e.target.checked)} />Entendi e aceito essa análise em sites que eu autorizar.</label>
+      <label className="check mt-4"><input type="checkbox" checked={prefs.consent} onChange={e => change('consent', e.target.checked)} />Entendi e aceito a análise automática durante as sessões.</label>
     </section>
     <section className="card"><h2>Conexão com a IA</h2>
       <p className="hint mb-3">A chave OpenAI pertence exclusivamente ao Worker. Não cole a chave da OpenAI nesta interface.</p>
@@ -65,10 +68,12 @@ export default function App() {
       <p className="hint">Subdomínios também são excluídos. Exclusões sensíveis do sistema continuam valendo.</p>
     </section>
     <Button disabled={busy} onClick={() => void perform(save, 'Preferências salvas. As mudanças já estão valendo.')}>Salvar preferências</Button>
-    <section className="card mt-7"><h2>Origens autorizadas</h2><p className="hint mb-4">Uma permissão de origem dá capacidade técnica ampla. O código limita a extração aos campos descritos acima. Backend e autenticação também aparecem nesta lista, pois a extensão precisa acessá-los.</p>
-      <ul>{snapshot?.origins.map(o => <li className="flex items-center justify-between gap-3 py-2 border-b break-all text-sm" key={o}><span>{o}</span><Button secondary disabled={busy} onClick={() => void perform(async () => { await chrome.permissions.remove({ origins: [o] }); await rpc('RETRY'); }, 'Permissão revogada.')}>Revogar</Button></li>)}</ul>
-      <label className="mt-4">Autorizar uma origem<input type="url" value={origin} onChange={e => setOrigin(e.target.value)} placeholder="https://www.youtube.com" /></label>
-      <Button secondary disabled={busy} onClick={() => void perform(grant, 'Origem autorizada.')}>Autorizar origem</Button>
+    <section className="card mt-7"><h2>Leitura automática dos sites</h2>
+      <p className="text-sm mb-3">Depois da confirmação inicial do Chrome, não é preciso liberar cada domínio. Ao mudar de aba ou de página, o Fio verifica as exclusões e relaciona o conteúdo ao objetivo da sessão.</p>
+      <p className="hint mb-4">O acesso HTTP/HTTPS tem capacidade técnica ampla. A coleta continua limitada aos campos descritos acima, à aba ativa e às suas sessões. A permissão pode ser removida a qualquer momento.</p>
+      <p role="status" className="mb-4">{snapshot?.automaticAccess ? 'Leitura automática habilitada.' : 'Leitura automática desativada.'}</p>
+      {snapshot?.automaticAccess ? <Button secondary disabled={busy} onClick={() => void perform(deactivateAutomatic, 'Leitura automática desativada e sessão pausada.')}>Desativar leitura automática</Button> :
+        <Button disabled={busy || !prefs.consent} onClick={() => void perform(activateAutomatic, 'Leitura automática habilitada. As páginas elegíveis serão analisadas durante a sessão.')}>Ativar leitura automática</Button>}
     </section>
     <section className="card"><h2>Conta de demonstração</h2><p className="hint mb-3">Para o backend público: use uma conta previamente criada no Supabase. Salve a conexão acima antes de entrar.</p>
       {snapshot?.signedIn ? <><p className="mb-3">Conectado nesta sessão do navegador.</p><Button secondary disabled={busy} onClick={() => void perform(() => rpc('LOGOUT'), 'Você saiu. A sessão foi pausada.')}>Sair</Button></> : <>
