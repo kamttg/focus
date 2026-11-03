@@ -10,6 +10,8 @@ export default defineBackground(() => {
   let state: RuntimeState = initialState();
   let prefs: Preferences = { ...defaults };
   let queue: Promise<unknown> = Promise.resolve();
+  const inFlight = new Map<string, { promise: Promise<Classification>; controller: AbortController }>();
+  const cancelRequests = () => { for (const item of inFlight.values()) item.controller.abort(); inFlight.clear(); };
   let stabilityTimer: ReturnType<typeof setTimeout> | undefined;
   const run = <T>(fn: () => Promise<T>): Promise<T> => {
     const result = queue.then(fn); queue = result.catch(() => {}); return result;
@@ -23,7 +25,7 @@ export default defineBackground(() => {
     if (tabId !== null) await chrome.scripting.executeScript({ target: { tabId }, func: removeOverlay }).catch(() => {});
   }
   async function finish() {
-    tick(); invalidate(); clearTimeout(stabilityTimer);
+    tick(); invalidate(); cancelRequests(); clearTimeout(stabilityTimer);
     await chrome.alarms.clear('fio-stable');
     if (state.session) { state.session.status = 'finished'; state.session.feedback = {}; }
     state.cache = {}; state.status = 'finished'; state.url = ''; state.domain = '';
@@ -31,7 +33,7 @@ export default defineBackground(() => {
     await chrome.notifications.clear('fio-reminder'); await clearOverlay(); await save();
   }
   async function pause() {
-    tick(); invalidate();
+    tick(); invalidate(); cancelRequests();
     if (state.session?.status === 'active') { state.session.status = 'paused'; state.session.pausedAt = Date.now(); }
     state.status = 'paused'; clearTimeout(stabilityTimer);
     await chrome.alarms.clear('fio-stable'); await clearOverlay(); await save();
@@ -76,6 +78,7 @@ export default defineBackground(() => {
   }
   async function observe() {
     tick(); invalidate();
+    await clearOverlay();
     const tab = await syncEnvironment();
     const url = tab?.url || '';
     const changed = state.tabId !== tab?.id || state.url !== url;
@@ -132,6 +135,13 @@ export default defineBackground(() => {
     const key = await hashContext(s.goal, s.topics, input.data.page);
     const hit = cached(state.cache, key, Date.now());
     if (hit) { await accept(hit, revision, '', 0); return; }
+    const flightKey = s.id + ':' + key;
+    const pending = inFlight.get(flightKey);
+    if (pending) {
+      state.status = 'analyzing'; await save();
+      void pending.promise.then(result => run(() => accept(result, revision, key, 0))).catch(() => {});
+      return;
+    }
     const day = new Date().toISOString().slice(0, 10);
     const usage = (await chrome.storage.local.get('usage')).usage as { day: string; count: number } | undefined;
     const count = usage?.day === day ? usage.count : 0;
@@ -142,14 +152,17 @@ export default defineBackground(() => {
     await chrome.storage.local.set({ usage: { day, count: count + 1 } }); await save();
     const started = Date.now();
     // A chamada externa não bloqueia a fila de pausa/foco/revogação.
-    void classify(input.data, prefs).then(result => run(async () => {
+    const controller = new AbortController();
+    const promise = classify(input.data, prefs, controller.signal);
+    const flight = { promise, controller }; inFlight.set(flightKey, flight);
+    void promise.then(result => run(async () => {
       if (revision === state.revision) { state.failures = 0; state.backoffUntil = 0; }
       await accept(result, revision, key, Date.now() - started);
     })).catch(() => run(async () => {
       if (revision !== state.revision || !active()) return;
       state.failures++; state.backoffUntil = Date.now() + Math.min(300_000, 30_000 * 2 ** Math.min(4, state.failures - 1));
       await accept(uncertain(), revision, '', Date.now() - started);
-    }));
+    })).finally(() => { if (inFlight.get(flightKey) === flight) inFlight.delete(flightKey); });
   }
   async function feedback(choice: string) {
     const s = state.session; if (!s || s.status === 'finished') return;

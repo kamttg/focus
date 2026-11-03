@@ -1,6 +1,6 @@
 import { classificationSchema, type ClassifyRequest } from '../../shared/contracts';
 import type { Preferences } from './session';
-export async function classify(input: ClassifyRequest, prefs: Preferences) {
+export async function classify(input: ClassifyRequest, prefs: Preferences, signal?: AbortSignal) {
   const auth = (await chrome.storage.session.get('auth')).auth as { access_token: string; expires_at: number; refresh_token: string } | undefined;
   let token = auth?.access_token;
   if (auth && auth.expires_at <= Date.now() + 30_000 && prefs.authUrl) {
@@ -14,7 +14,7 @@ export async function classify(input: ClassifyRequest, prefs: Preferences) {
     await chrome.storage.session.set({ auth: { access_token: token, refresh_token: data.refresh_token, expires_at: Date.now() + data.expires_in * 1000 } });
   }
   const r = await fetch(prefs.endpoint.replace(/\/$/, '') + '/classify', {
-    method: 'POST', signal: AbortSignal.timeout(15_000),
+    method: 'POST', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
     body: JSON.stringify(input)
   });

@@ -47,17 +47,23 @@ export function installPageObserver() {
   if (w[marker]) return;
   w[marker] = true;
   let timer: ReturnType<typeof setTimeout>;
-  let previous = '';
-  const observer = new MutationObserver(() => {
+  let previous = ''; let changedCharacters = 0;
+  const observer = new MutationObserver(records => {
+    for (const record of records) {
+      const element = record.target.nodeType === Node.ELEMENT_NODE ? record.target as Element : record.target.parentElement;
+      if (element?.closest('main,article,[role="main"]') && !element.closest('#__fio_overlay,input,textarea,form,[contenteditable],.messages,.chat,[data-private]')) {
+        changedCharacters += record.type === 'characterData' ? Math.abs((record.target.textContent?.length || 0) - (record.oldValue?.length || 0)) : record.addedNodes.length * 80 + record.removedNodes.length * 80;
+      }
+    }
     clearTimeout(timer);
     timer = setTimeout(() => {
       const signature = location.href + document.title + Array.from(document.querySelectorAll('main h1,main h2,article h1,article h2'))
         .slice(0, 8).map(el => el.textContent?.slice(0, 100)).join('');
-      if (signature !== previous) {
-        previous = signature;
+      if (signature !== previous || changedCharacters >= 80) {
+        previous = signature; changedCharacters = 0;
         void chrome.runtime.sendMessage({ type: 'DIRTY' }).catch(() => observer.disconnect());
       }
     }, 1500);
   });
-  observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true });
+  observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true, characterDataOldValue: true });
 }

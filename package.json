@@ -26,5 +26,8 @@
     "typescript": "~5.9.3",
     "vitest": "^3.2.4",
     "jsdom": "^26.1.0"
+  },
+  "overrides": {
+    "@vitejs/plugin-react": "4.7.0"
   }
 }
