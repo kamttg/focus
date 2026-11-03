@@ -186,8 +186,14 @@ test('identifica página autorizada em janela Chrome do tipo popup', async () =>
  await expect(control.getByRole('button', { name: 'Pausar', exact: true })).toBeVisible();
  const fixture = 'https://public.example.test/popup-window';
  await context.route(fixture, route => route.fulfill({ contentType: 'text/html', body: '<title>Tutorial Pandas</title><main><h1>Pandas</h1><p>Limpeza de dados públicos de teste.</p></main>' }));
+ const pageOpened = context.waitForEvent('page');
  const created = await worker.evaluate(url => chrome.windows.create({ url, type: 'popup', focused: true, width: 900, height: 650 }), fixture);
+ const popupPage = await pageOpened;
+ await popupPage.waitForLoadState('domcontentloaded');
+ await popupPage.bringToFront();
+ if (created?.id !== undefined) await worker.evaluate(windowId => chrome.windows.update(windowId, { focused: true }), created.id);
  const state = () => worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime);
+ await expect.poll(async () => (await state()).focused, { timeout: 10000 }).toBe(true);
  await expect.poll(async () => (await state()).domain, { timeout: 15000 }).toBe('public.example.test');
  await expect.poll(async () => (await state()).classification?.label, { timeout: 15000 }).toBe('relevant');
  expect((await state()).focused).toBe(true);
