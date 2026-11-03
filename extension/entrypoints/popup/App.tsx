@@ -13,9 +13,12 @@ export default function App() {
   const [reference, setReference] = useState(false);
   const refresh = async () => { const data = await rpc<Snapshot>('GET'); setSnapshot(data); };
   useEffect(() => {
+    // Chrome does not consistently emit a window-focus event when its action
+    // popup closes. The background uses this port's disconnect as that signal.
+    const view = chrome.runtime.connect({ name: 'fio-popup-view' });
     void rpc<Snapshot>('GET').then(data => { setSnapshot(data); setDelay(String(data.prefs.delayMinutes)); }).catch(e => setError(e.message));
     const timer = setInterval(() => { void refresh().catch(() => {}); }, 2000);
-    return () => clearInterval(timer);
+    return () => { clearInterval(timer); view.disconnect(); };
   }, []);
   const perform = async (fn: () => Promise<unknown>) => {
     setBusy(true); setError('');

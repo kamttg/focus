@@ -214,3 +214,25 @@ test('abrir o popup real da barra preserva a identificação da página', async 
  await control.bringToFront(); await control.getByRole('button', { name: 'Encerrar sessão' }).click();
  await control.close(); await site.close();
 });
+
+test('fechar o popup real reavalia a página sem esperar o alarme periódico', async () => {
+ const site = await context.newPage();
+ await site.route('https://public.example.test/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Tutorial Pandas</title><main><h1>Pandas</h1><p>Página de teste público.</p></main>' }));
+ await site.goto('https://public.example.test/close-toolbar-popup');
+ const control = await context.newPage(); await control.goto('chrome-extension://' + id + '/popup.html');
+ await site.bringToFront();
+ await worker.evaluate(() => chrome.action.openPopup());
+ await expect.poll(() => worker.evaluate(() => chrome.runtime.getContexts({ contextTypes: ['POPUP'] }))).toHaveLength(1);
+ // Start while the real toolbar popup owns focus, like a person using the form.
+ const result = await control.evaluate(() => chrome.runtime.sendMessage({ type: 'START', kind: 'study', goal: 'Estudar Pandas', topics: ['Pandas'], duration: 0, useCurrentTab: false }));
+ expect(result.ok).toBe(true);
+ // Selecting the page dismisses Chrome's action popup without switching tabs.
+ await site.mouse.click(20, 180);
+ await expect.poll(() => worker.evaluate(() => chrome.runtime.getContexts({ contextTypes: ['POPUP'] }))).toHaveLength(0);
+ const state = () => worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime);
+ await expect.poll(async () => (await state()).classification?.label, { timeout: 15000 }).toBe('relevant');
+ expect((await state()).domain).toBe('public.example.test');
+ await control.bringToFront();
+ await control.evaluate(() => chrome.runtime.sendMessage({ type: 'FINISH' }));
+ await control.close(); await site.close();
+});

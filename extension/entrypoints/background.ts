@@ -211,6 +211,12 @@ export default defineBackground(() => {
     await chrome.alarms.create('fio-heartbeat', { periodInMinutes: .5 });
     await observe();
   });
+  chrome.runtime.onConnect.addListener(port => {
+    if (port.name !== 'fio-popup-view' || !port.sender || port.sender.tab || !isTrustedUI(port.sender, chrome.runtime.id)) return;
+    // The toolbar popup closing is not a tab/window activation on every OS.
+    // Re-read actual focus instead of treating the popup as proof of activity.
+    port.onDisconnect.addListener(() => { void ready.then(() => run(observe)); });
+  });
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
     void ready.then(() => run(async () => {
       const trustedUI = isTrustedUI(sender, chrome.runtime.id);

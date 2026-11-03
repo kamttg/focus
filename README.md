@@ -120,6 +120,8 @@ Não use npm audit fix --force para resolver diferenças de versão automaticame
 
 O monitor consulta a aba ativa da última janela selecionada e verifica o foco diretamente na janela dessa aba. Não depende de uma lista de janelas com tipo normal. Quando o Chrome perde foco, mantém o domínio identificável na interface, sem coletar ou contar tempo em segundo plano.
 
+Ao fechar o popup da barra, a extensão verifica novamente a aba imediatamente, sem depender de o Chrome emitir um evento de foco ou de aguardar o alarme periódico.
+
 O popup agora diferencia falta de consentimento, permissão por origem, inatividade, janela em segundo plano, página excluída e falha de extração. O botão de autorização aparece somente quando a permissão da origem está faltando. A versão instalada aparece no rodapé.
 
 Para aplicar sobre uma instalação local existente, preserve a pasta da extensão e o arquivo privado worker/.dev.vars. Depois de atualizar o código e executar npm.cmd ci e npm.cmd run build, clique em Recarregar no cartão do Fio em chrome://extensions. Atualizar na mesma pasta preserva o ID da extensão; carregar uma pasta diferente pode mudar o ID e exigir atualizar ALLOWED_ORIGINS no servidor.
