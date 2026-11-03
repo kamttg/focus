@@ -24,12 +24,12 @@ Baixe o artefato **fio-validation** na execução bem-sucedida do [GitHub Action
 
 ## Executar localmente
 
-Requisitos: Node.js 22+, npm, Chrome/Chromium e conta OpenAI com acesso ao modelo configurado.
+Requisitos: Node.js 22.12+ (linha 22), 24 ou 26+, npm, Chrome/Chromium e conta OpenAI com acesso ao modelo configurado.
 
 ~~~sh
 git clone https://github.com/kamttg/focus.git
 cd focus
-npm install
+npm ci
 cp worker/.dev.vars.example worker/.dev.vars
 npm run dev:worker
 # Em outro terminal:
@@ -63,6 +63,7 @@ JWT é verificado por assinatura, issuer, audience, sub e exp. CORS sozinho não
 ## Testes e build
 
 ~~~sh
+npm run audit
 npm run typecheck
 npm test
 npm run build
@@ -73,7 +74,7 @@ xvfb-run --auto-servernum npm run test:e2e
 npm run test:e2e
 ~~~
 
-O [workflow](.github/workflows/ci.yml) executa essas etapas e publica fio-chrome-mv3 e fio-validation como artefatos. Os testes não precisam de chave OpenAI e não fazem inferências pagas. O CI tem acesso somente de leitura ao repositório. O lockfile resolvido fica no artefato fio-validation; para reproduzir exatamente uma execução, copie esse package-lock.json para a raiz e use npm ci. Resultados reais estão em [Actions](https://github.com/kamttg/focus/actions); os testes de contrato usam respostas simuladas, sem alegar validação semântica do modelo.
+O [workflow](.github/workflows/ci.yml) executa essas etapas e publica fio-chrome-mv3 e fio-validation como artefatos. Os testes não precisam de chave OpenAI e não fazem inferências pagas. O CI tem acesso somente de leitura ao repositório. O package-lock.json está versionado na raiz. Use npm ci para instalar as mesmas versões verificadas; o CI também executa npm audit incluindo ferramentas de desenvolvimento. Resultados reais estão em [Actions](https://github.com/kamttg/focus/actions); os testes de contrato usam respostas simuladas, sem alegar validação semântica do modelo.
 
 ## Comportamentos e limites conhecidos
 
@@ -97,3 +98,20 @@ O [workflow](.github/workflows/ci.yml) executa essas etapas e publica fio-chrome
 - [Protótipo navegável em HTML](docs/prototype.html)
 
 Projeto de engenharia e portfólio. A validação clínica e a inferência de estado cognitivo estão fora do escopo.
+
+## Windows / PowerShell
+
+Abra no VS Code a pasta que contém este README, package.json, extension e worker. Em Terminal → Novo Terminal:
+
+~~~powershell
+node --version
+npm.cmd --version
+npm.cmd ci
+npm.cmd run audit
+~~~
+
+npm.cmd evita bloqueios de scripts do PowerShell, sem alterar a política de execução do Windows. Para iniciar o servidor local depois de configurar worker/.dev.vars, use npm.cmd run dev:worker.
+
+Se você baixou uma versão anterior por ZIP, baixe o código atualizado em uma nova pasta e abra essa pasta no VS Code. Preserve seu worker/.dev.vars, caso já tenha sido criado, sem enviá-lo ao GitHub. O ZIP extraído pode conter outra pasta focus-main: o comando deve ser executado onde está package.json, não na pasta acima.
+
+Não use npm audit fix --force para resolver diferenças de versão automaticamente. As atualizações de WXT, Vite, Vitest e Zod foram coordenadas e validadas em conjunto; futuras auditorias podem detectar novos avisos e devem ser avaliadas antes de alterar o lockfile.

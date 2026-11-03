@@ -16,12 +16,9 @@ jobs:
         with:
           node-version: 22
       - name: Install dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
+        run: npm ci
+      - name: Audit all dependencies
+        run: npm run audit
       - name: Typecheck
         run: npm run typecheck
       - name: Unit and API tests
