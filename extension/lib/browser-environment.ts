@@ -29,6 +29,6 @@ export async function readBrowserEnvironment(api: BrowserEnvironmentAPI, readPag
   // In an authorized page, the isolated world's document.hasFocus() and
   // visibilityState are independent of Chrome's sometimes stale window flag.
   // A visible tab alone never proves activity. Minimized windows never count.
-  const focused = window?.state === 'minimized' ? false : page ? page.focused && page.visible : windowFocused;
+  const focused = window?.state === 'minimized' ? false : page ? page.visible && (windowFocused || page.focused) : windowFocused;
   return { tab, focused, idle: activity !== 'active', windowFocused, pageFocused: page?.focused ?? null, pageVisible: page?.visible ?? null };
 }

@@ -67,8 +67,8 @@ describe('foco independente da página autorizada', () => {
   it('não conta uma página oculta mesmo que outro sinal indique foco', async () => {
     expect((await readBrowserEnvironment(api(), async () => ({ focused: true, visible: false }))).focused).toBe(false);
   });
-  it('foco do popup não equivale a foco da página', async () => {
-    expect((await readBrowserEnvironment(api(), async () => ({ focused: false, visible: true }))).focused).toBe(false);
+  it('teclado na barra do navegador não desativa uma aba visível em uma janela focada', async () => {
+    expect((await readBrowserEnvironment(api(), async () => ({ focused: false, visible: true }))).focused).toBe(true);
   });
   it('não faz a sondagem em janela minimizada', async () => {
     const probe = vi.fn().mockResolvedValue({ focused: true, visible: true });
