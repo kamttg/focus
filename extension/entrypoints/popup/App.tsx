@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { rpc, type Snapshot } from '../../lib/rpc';
 import { originPattern, allowedPage } from '../../lib/privacy';
 import { Brand, Button, statuses } from '../../components/ui';
+import { monitoringMessages } from '../../lib/monitoring-status';
 export default function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [debug, setDebug] = useState<unknown>(null);
@@ -39,6 +40,8 @@ export default function App() {
   }
   const s = snapshot?.state.session;
   const running = s && s.status !== 'finished';
+  const monitoring = snapshot?.state.status === 'not_monitored' && snapshot.state.monitoringReason
+    ? monitoringMessages[snapshot.state.monitoringReason] : null;
   return <main className="w-[390px] p-6"><Brand />
     {error && <p role="alert" className="mb-4 rounded-xl border border-amber-400 p-3 text-sm">{error}</p>}
     {!snapshot ? <p role="status">Abrindo o Fio…</p> : running ? <>
@@ -46,9 +49,9 @@ export default function App() {
       <h1>{s.goal}</h1><p className="hint mb-5">{s.topics.join(' · ') || 'Uma tarefa de cada vez.'}</p>
       <section className="card" aria-live="polite">
         <span className="text-xs uppercase tracking-wide text-leaf">{s.status === 'paused' ? 'Pausado' : s.endsAt ? 'Sessão com duração fixa' : 'Duração indefinida'}</span>
-        <h2 className="mt-2">{statuses[snapshot.state.status] || snapshot.state.status}</h2>
+        <h2 className="mt-2">{monitoring?.title || statuses[snapshot.state.status] || snapshot.state.status}</h2>
         <p className="text-sm break-all">{snapshot.state.domain || 'Escolha uma página para continuar.'}</p>
-        <p className="hint mt-3">{snapshot.state.classification?.reason || 'A leitura depende da sua autorização. Uma avaliação incerta não gera alerta.'}</p>
+        <p className="hint mt-3">{monitoring?.description || snapshot.state.classification?.reason || 'A leitura depende da sua autorização. Uma avaliação incerta não gera alerta.'}</p>
         <div className="mt-4 border-t pt-3 flex justify-between text-xs">
           <span>Possível desvio contínuo</span><span>{Math.floor(snapshot.state.clock.offTopicMs / 60000)} min</span>
         </div>
@@ -56,7 +59,8 @@ export default function App() {
       </section>
       <div className="flex gap-2 mb-4"><Button disabled={busy} onClick={() => void perform(() => rpc(s.status === 'paused' ? 'RESUME' : 'PAUSE'))}>{s.status === 'paused' ? 'Retomar' : 'Pausar'}</Button>
       <Button secondary disabled={busy} onClick={() => void perform(() => rpc('FINISH'))}>Encerrar sessão</Button></div>
-      {snapshot.state.status === 'not_monitored' && <Button secondary disabled={busy} onClick={() => void perform(authorize)}>Autorizar site atual</Button>}
+      {snapshot.state.status === 'not_monitored' && snapshot.state.monitoringReason === 'permission_required' && <Button secondary disabled={busy} onClick={() => void perform(authorize)}>Autorizar site atual</Button>}
+      {snapshot.state.status === 'not_monitored' && <Button secondary disabled={busy} onClick={() => void perform(() => rpc('RETRY'))}>Verificar página novamente</Button>}
       {snapshot.state.classification && <div className="flex flex-wrap gap-2 mt-4">
         {([['Faz parte da tarefa', 'relevant'], ['Adiar', 'snooze'], ['Ignorar site', 'ignore'], ['Voltar ao foco', 'return']] as const).filter(([, choice]) => choice !== 'return' || s.focusTabId !== null).map(([label, choice]) =>
           <Button key={choice} secondary disabled={busy} onClick={() => void perform(() => rpc('FEEDBACK', { choice }))}>{label}</Button>)}
@@ -88,6 +92,6 @@ export default function App() {
       </form>
       {s?.status === 'finished' && <p className="hint mt-4">Sessão anterior: {s.analyses} análises, {s.alerts} lembretes e {s.corrections} correções. Cache descartado.</p>}
     </>}
-    <footer className="mt-6 border-t border-stone-200 pt-4 flex items-center justify-between"><button className="text-sm underline" onClick={() => void chrome.runtime.openOptionsPage()}>Sites e configurações</button><span className="text-xs text-stone-500">No seu ritmo.</span></footer>
+    <footer className="mt-6 border-t border-stone-200 pt-4 flex items-center justify-between"><button className="text-sm underline" onClick={() => void chrome.runtime.openOptionsPage()}>Sites e configurações</button><span className="text-xs text-stone-500">v{chrome.runtime.getManifest().version} · No seu ritmo.</span></footer>
   </main>;
 }

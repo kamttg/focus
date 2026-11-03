@@ -115,3 +115,11 @@ npm.cmd evita bloqueios de scripts do PowerShell, sem alterar a política de exe
 Se você baixou uma versão anterior por ZIP, baixe o código atualizado em uma nova pasta e abra essa pasta no VS Code. Preserve seu worker/.dev.vars, caso já tenha sido criado, sem enviá-lo ao GitHub. O ZIP extraído pode conter outra pasta focus-main: o comando deve ser executado onde está package.json, não na pasta acima.
 
 Não use npm audit fix --force para resolver diferenças de versão automaticamente. As atualizações de WXT, Vite, Vitest e Zod foram coordenadas e validadas em conjunto; futuras auditorias podem detectar novos avisos e devem ser avaliadas antes de alterar o lockfile.
+
+## Atualização 0.1.1 — identificação da aba
+
+O monitor consulta a aba ativa da última janela selecionada e verifica o foco diretamente na janela dessa aba. Não depende de uma lista de janelas com tipo normal. Quando o Chrome perde foco, mantém o domínio identificável na interface, sem coletar ou contar tempo em segundo plano.
+
+O popup agora diferencia falta de consentimento, permissão por origem, inatividade, janela em segundo plano, página excluída e falha de extração. O botão de autorização aparece somente quando a permissão da origem está faltando. A versão instalada aparece no rodapé.
+
+Para aplicar sobre uma instalação local existente, preserve a pasta da extensão e o arquivo privado worker/.dev.vars. Depois de atualizar o código e executar npm.cmd ci e npm.cmd run build, clique em Recarregar no cartão do Fio em chrome://extensions. Atualizar na mesma pasta preserva o ID da extensão; carregar uma pasta diferente pode mudar o ID e exigir atualizar ALLOWED_ORIGINS no servidor.

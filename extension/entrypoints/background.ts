@@ -1,4 +1,5 @@
 import { isTrustedUI } from '../lib/message-security';
+import { readBrowserEnvironment } from '../lib/browser-environment';
 import { defaults, initialState, hashContext, cached, type RuntimeState, type Preferences } from '../lib/session';
 import { accrue, resetContinuous, shouldAlert } from '../lib/decision-engine';
 import { allowedPage, originPattern, validEndpoint } from '../lib/privacy';
@@ -65,13 +66,10 @@ export default defineBackground(() => {
       await chrome.permissions.contains({ origins: [originPattern(url)] });
   }
   async function syncEnvironment() {
-    const windows = await chrome.windows.getAll();
-    const focused = windows.find(w => w.focused && w.type === 'normal');
-    const tabs = focused?.id !== undefined ? await chrome.tabs.query({ active: true, windowId: focused.id }) : [];
-    const tab = tabs[0];
-    state.focused = !!focused;
-    state.idle = (await chrome.idle.queryState(60)) !== 'active';
-    return tab && !tab.incognito ? tab : null;
+    const environment = await readBrowserEnvironment(chrome);
+    state.focused = environment.focused;
+    state.idle = environment.idle;
+    return environment.tab;
   }
   async function schedule() {
     clearTimeout(stabilityTimer); await chrome.alarms.clear('fio-stable');
@@ -81,11 +79,14 @@ export default defineBackground(() => {
     stabilityTimer = setTimeout(() => { void run(analyze); }, prefs.stabilitySeconds * 1000);
   }
   async function observe() {
+    const previousClassification = state.classification;
     tick(); invalidate();
+    state.monitoringReason = null;
     await stopObserver(); await clearOverlay();
     if (!active() || !prefs.consent) {
       state.tabId = null; state.url = ''; state.domain = ''; state.focused = false; state.idle = false;
       state.status = active() ? 'not_monitored' : (state.session?.status || 'inactive');
+      state.monitoringReason = active() && !prefs.consent ? 'consent_required' : null;
       clearTimeout(stabilityTimer); await chrome.alarms.clear('fio-stable'); await save(); return;
     }
     const tab = await syncEnvironment();
@@ -95,8 +96,17 @@ export default defineBackground(() => {
     state.tabId = tab?.id ?? null; state.url = url;
     try { state.domain = new URL(url).hostname; } catch { state.domain = ''; }
     state.status = active() ? 'waiting' : (state.session?.status || 'inactive');
-    if (active() && (!tab || !state.focused || state.idle)) state.status = 'not_monitored';
-    else if (active() && !(await eligible(url))) state.status = 'not_monitored';
+    if (!tab) state.monitoringReason = 'no_active_tab';
+    else if (!state.focused) state.monitoringReason = 'window_unfocused';
+    else if (state.idle) state.monitoringReason = 'idle';
+    else if (!allowedPage(url, prefs.exclusions)) state.monitoringReason = 'excluded';
+    else if (!(await eligible(url))) state.monitoringReason = 'permission_required';
+    if (state.monitoringReason) state.status = 'not_monitored';
+    // A toolbar popup or focus change must not erase the last known result
+    // for the same tab. This is display-only while focus/activity is absent.
+    if (!changed && (state.monitoringReason === 'window_unfocused' || state.monitoringReason === 'idle')) {
+      state.classification = previousClassification;
+    }
     await save(); await schedule();
   }
   async function accept(result: Classification, revision: number, key: string, latency: number) {
@@ -137,8 +147,8 @@ export default defineBackground(() => {
       const results = await chrome.scripting.executeScript({ target: { tabId: state.tabId }, func: extractPageContext });
       page = results[0]?.result;
       if (page) await chrome.scripting.executeScript({ target: { tabId: state.tabId }, func: installPageObserver });
-    } catch { state.status = 'not_monitored'; await save(); return; }
-    if (!page) { state.status = 'not_monitored'; await save(); return; }
+    } catch { state.status = 'not_monitored'; state.monitoringReason = 'extraction_unavailable'; await save(); return; }
+    if (!page) { state.status = 'not_monitored'; state.monitoringReason = 'extraction_unavailable'; await save(); return; }
     const input = requestSchema.safeParse({ goal: s.goal, topics: s.topics, page });
     if (!input.success) { state.status = 'uncertain'; state.classification = uncertain(); await save(); return; }
     const key = await hashContext(s.goal, s.topics, input.data.page);

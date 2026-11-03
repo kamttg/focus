@@ -17,16 +17,18 @@ export interface Session {
   analyses: number; alerts: number; corrections: number;
 }
 export interface CacheEntry { result: Classification; expiresAt: number }
+export type MonitoringReason = 'consent_required' | 'no_active_tab' | 'window_unfocused' | 'idle' | 'excluded' | 'permission_required' | 'extraction_unavailable';
 export interface RuntimeState {
   session: Session | null; clock: Clock; tabId: number | null; url: string; domain: string;
   classification: Classification | null; status: string; revision: number; focused: boolean; idle: boolean;
   cache: Record<string, CacheEntry>; backoffUntil: number; failures: number;
   lastLatencyMs: number;
+  monitoringReason: MonitoringReason | null;
 }
 export const initialState = (): RuntimeState => ({
   session: null, clock: { lastAt: Date.now(), offTopicMs: 0, totalOffTopicMs: 0, cooldownUntil: 0, snoozeUntil: 0 },
   tabId: null, url: '', domain: '', classification: null, status: 'inactive', revision: 0, focused: false, idle: false,
-  cache: {}, backoffUntil: 0, failures: 0, lastLatencyMs: 0
+  cache: {}, backoffUntil: 0, failures: 0, lastLatencyMs: 0, monitoringReason: null
 });
 export async function hashContext(goal: string, topics: string[], page: unknown) {
   const bytes = new TextEncoder().encode(JSON.stringify([goal, topics, page]));

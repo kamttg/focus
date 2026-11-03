@@ -178,3 +178,39 @@ test('pausar durante inferência descarta resultado atrasado', async () => {
  await popup.bringToFront(); await popup.getByRole('button', { name: 'Encerrar sessão' }).click();
  await popup.close(); await site.close();
 });
+
+test('identifica página autorizada em janela Chrome do tipo popup', async () => {
+ const control = await context.newPage(); await control.goto('chrome-extension://' + id + '/popup.html');
+ await control.getByLabel('Tema e objetivo').fill('Estudar Pandas');
+ await control.getByRole('button', { name: 'Iniciar sessão' }).click();
+ await expect(control.getByRole('button', { name: 'Pausar', exact: true })).toBeVisible();
+ const fixture = 'https://public.example.test/popup-window';
+ await context.route(fixture, route => route.fulfill({ contentType: 'text/html', body: '<title>Tutorial Pandas</title><main><h1>Pandas</h1><p>Limpeza de dados públicos de teste.</p></main>' }));
+ const created = await worker.evaluate(url => chrome.windows.create({ url, type: 'popup', focused: true, width: 900, height: 650 }), fixture);
+ const state = () => worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime);
+ await expect.poll(async () => (await state()).domain, { timeout: 15000 }).toBe('public.example.test');
+ await expect.poll(async () => (await state()).classification?.label, { timeout: 15000 }).toBe('relevant');
+ expect((await state()).focused).toBe(true);
+ if (created?.id !== undefined) await worker.evaluate(windowId => chrome.windows.remove(windowId), created.id);
+ await control.bringToFront(); await control.getByRole('button', { name: 'Encerrar sessão' }).click();
+ await context.unroute(fixture); await control.close();
+});
+
+test('abrir o popup real da barra preserva a identificação da página', async () => {
+ const site = await context.newPage();
+ await site.route('https://public.example.test/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Tutorial Pandas</title><main><h1>Pandas</h1><p>Uma página pública de teste.</p></main>' }));
+ await site.goto('https://public.example.test/toolbar-popup');
+ const control = await context.newPage(); await control.goto('chrome-extension://' + id + '/popup.html');
+ await control.getByLabel('Tema e objetivo').fill('Estudar Pandas');
+ await control.getByRole('button', { name: 'Iniciar sessão' }).click();
+ await expect(control.getByRole('button', { name: 'Pausar', exact: true })).toBeVisible();
+ await site.bringToFront();
+ const state = () => worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime);
+ await expect.poll(async () => (await state()).classification?.label, { timeout: 15000 }).toBe('relevant');
+ await worker.evaluate(() => chrome.action.openPopup());
+ await expect.poll(() => worker.evaluate(() => chrome.runtime.getContexts({ contextTypes: ['POPUP'] }))).toHaveLength(1);
+ await expect.poll(async () => (await state()).domain).toBe('public.example.test');
+ await expect.poll(async () => (await state()).classification?.label, { timeout: 15000 }).toBe('relevant');
+ await control.bringToFront(); await control.getByRole('button', { name: 'Encerrar sessão' }).click();
+ await control.close(); await site.close();
+});
