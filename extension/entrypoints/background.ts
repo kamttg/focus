@@ -83,6 +83,11 @@ export default defineBackground(() => {
   async function observe() {
     tick(); invalidate();
     await stopObserver(); await clearOverlay();
+    if (!active() || !prefs.consent) {
+      state.tabId = null; state.url = ''; state.domain = ''; state.focused = false; state.idle = false;
+      state.status = active() ? 'not_monitored' : (state.session?.status || 'inactive');
+      clearTimeout(stabilityTimer); await chrome.alarms.clear('fio-stable'); await save(); return;
+    }
     const tab = await syncEnvironment();
     const url = tab?.url || '';
     const changed = state.tabId !== tab?.id || state.url !== url;
@@ -131,7 +136,7 @@ export default defineBackground(() => {
     try {
       const results = await chrome.scripting.executeScript({ target: { tabId: state.tabId }, func: extractPageContext });
       page = results[0]?.result;
-      await chrome.scripting.executeScript({ target: { tabId: state.tabId }, func: installPageObserver });
+      if (page) await chrome.scripting.executeScript({ target: { tabId: state.tabId }, func: installPageObserver });
     } catch { state.status = 'not_monitored'; await save(); return; }
     if (!page) { state.status = 'not_monitored'; await save(); return; }
     const input = requestSchema.safeParse({ goal: s.goal, topics: s.topics, page });
@@ -290,6 +295,7 @@ export default defineBackground(() => {
     void run(async () => {
       if (alarm.name === 'fio-stable') { await analyze(); return; }
       if (alarm.name !== 'fio-heartbeat') return;
+      if (!active() || !prefs.consent) { state.clock.lastAt = Date.now(); await save(); return; }
       if (active() && state.session?.endsAt && Date.now() >= state.session.endsAt) { await finish(); return; }
       const before = { tabId: state.tabId, focused: state.focused, idle: state.idle };
       const tab = await syncEnvironment();

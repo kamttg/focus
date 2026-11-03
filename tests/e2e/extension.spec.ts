@@ -6,7 +6,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { extractPageContext } from '../../extension/lib/extractor';
 let context: BrowserContext; let worker: Worker; let id: string; let profile: string;
-let server: Server; let endpoint: string; const requests: any[] = [];
+let server: Server; let endpoint: string; const requests: any[] = []; let completedRequests = 0;
 test.beforeAll(async () => {
  profile = await mkdtemp(path.join(tmpdir(), 'fio-test-'));
  const original = path.resolve('extension/.output/chrome-mv3');
@@ -23,6 +23,8 @@ test.beforeAll(async () => {
    if (req.method === 'OPTIONS') { res.writeHead(204).end(); return; }
    let body = ''; for await (const chunk of req) body += chunk;
    const data = JSON.parse(body); requests.push(data);
+   if (data.page.title.includes('lento')) await new Promise(resolve => setTimeout(resolve, 1500));
+   completedRequests++;
    res.setHeader('Content-Type', 'application/json');
    if (data.page.title.includes('Offline')) { res.writeHead(503).end('{}'); return; }
    const relevant = data.page.title.includes('Pandas');
@@ -36,6 +38,14 @@ test.beforeAll(async () => {
  });
  worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
  id = new URL(worker.url()).host;
+});
+test.beforeEach(async ({}, info) => {
+ const control = await context.newPage(); await control.goto('chrome-extension://' + id + '/options.html');
+ const result = await control.evaluate(async ({ endpoint, consent }) => {
+   await chrome.runtime.sendMessage({ type: 'FINISH' });
+   return chrome.runtime.sendMessage({ type: 'SAVE', preferences: { endpoint, consent, delayMinutes: 0, cooldownMinutes: 10, stabilitySeconds: 3, notifications: false, overlay: true } });
+ }, { endpoint, consent: !info.title.startsWith('sessão real:') });
+ expect(result.ok).toBe(true); await control.close();
 });
 test.afterAll(async () => { await context?.close(); await new Promise<void>(resolve => server?.close(() => resolve())); if (profile) await rm(profile, { recursive: true, force: true }); });
 test('sessão real: consentimento, início, pausa, retomada e limpeza do cache', async () => {
@@ -130,5 +140,41 @@ test('ciclo completo com API simulada: mesmo domínio, cache, lembrete e correç
  expect((await state()).session.feedback['public.example.test']).toBe('relevant');
  await popup.bringToFront(); await popup.getByRole('button', { name: 'Encerrar sessão' }).click();
  expect((await state()).cache).toEqual({});
+ await popup.close(); await site.close();
+});
+
+test('falha da API mantém uncertain e não produz lembrete injustificado', async () => {
+ const site = await context.newPage();
+ await site.route('https://public.example.test/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Offline</title><main><h1>Conteúdo indisponível</h1><p>Uma página pública sintética.</p></main>' }));
+ await site.goto('https://public.example.test/offline');
+ const popup = await context.newPage(); await popup.goto('chrome-extension://' + id + '/popup.html');
+ await popup.getByLabel('Tema e objetivo').fill('Estudar Pandas');
+ await popup.getByRole('button', { name: 'Iniciar sessão' }).click();
+ await expect(popup.getByRole('button', { name: 'Pausar', exact: true })).toBeVisible();
+ await site.bringToFront();
+ await expect.poll(() => worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime.status), { timeout: 15000 }).toBe('uncertain');
+ const state = await worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime);
+ expect(state.session.alerts).toBe(0); expect(state.classification.label).toBe('uncertain');
+ await expect(site.locator('#__fio_overlay')).toHaveCount(0);
+ await popup.bringToFront(); await popup.getByRole('button', { name: 'Encerrar sessão' }).click();
+ await popup.close(); await site.close();
+});
+test('pausar durante inferência descarta resultado atrasado', async () => {
+ const before = completedRequests;
+ const site = await context.newPage();
+ await site.route('https://public.example.test/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Tutorial Pandas lento</title><main><h1>Pandas</h1><p>Dados de teste.</p></main>' }));
+ await site.goto('https://public.example.test/slow');
+ const popup = await context.newPage(); await popup.goto('chrome-extension://' + id + '/popup.html');
+ await popup.getByLabel('Tema e objetivo').fill('Estudar Pandas');
+ await popup.getByRole('button', { name: 'Iniciar sessão' }).click();
+ await expect(popup.getByRole('button', { name: 'Pausar', exact: true })).toBeVisible();
+ await site.bringToFront();
+ await expect.poll(() => worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime.status), { timeout: 15000 }).toBe('analyzing');
+ const result = await popup.evaluate(() => chrome.runtime.sendMessage({ type: 'PAUSE' }));
+ expect(result.ok).toBe(true);
+ await expect.poll(() => completedRequests).toBeGreaterThan(before);
+ const state = await worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime);
+ expect(state.session.status).toBe('paused'); expect(state.classification).toBeNull(); expect(state.session.alerts).toBe(0);
+ await popup.bringToFront(); await popup.getByRole('button', { name: 'Encerrar sessão' }).click();
  await popup.close(); await site.close();
 });
