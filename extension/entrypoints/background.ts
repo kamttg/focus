@@ -21,12 +21,15 @@ export default defineBackground(() => {
   const counting = () => !!(active() && state.focused && !state.idle && state.classification?.label === 'off_topic' && state.classification.confidence >= .8);
   const tick = () => { state.clock = accrue(state.clock, Date.now(), counting()); };
   const invalidate = () => { state.revision++; state.classification = null; };
+  async function stopObserver(tabId = state.tabId) {
+    if (tabId !== null) await chrome.tabs.sendMessage(tabId, { type: 'FIO_STOP' }).catch(() => {});
+  }
   async function clearOverlay(tabId = state.tabId) {
     if (tabId !== null) await chrome.scripting.executeScript({ target: { tabId }, func: removeOverlay }).catch(() => {});
   }
   async function finish() {
     tick(); invalidate(); cancelRequests(); clearTimeout(stabilityTimer);
-    await chrome.alarms.clear('fio-stable');
+    await chrome.alarms.clear('fio-stable'); await stopObserver();
     if (state.session) { state.session.status = 'finished'; state.session.feedback = {}; }
     state.cache = {}; state.status = 'finished'; state.url = ''; state.domain = '';
     state.clock = resetContinuous(state.clock, Date.now());
@@ -36,7 +39,7 @@ export default defineBackground(() => {
     tick(); invalidate(); cancelRequests();
     if (state.session?.status === 'active') { state.session.status = 'paused'; state.session.pausedAt = Date.now(); }
     state.status = 'paused'; clearTimeout(stabilityTimer);
-    await chrome.alarms.clear('fio-stable'); await clearOverlay(); await save();
+    await chrome.alarms.clear('fio-stable'); await stopObserver(); await clearOverlay(); await save();
   }
   async function remind() {
     const s = state.session;
@@ -78,7 +81,7 @@ export default defineBackground(() => {
   }
   async function observe() {
     tick(); invalidate();
-    await clearOverlay();
+    await stopObserver(); await clearOverlay();
     const tab = await syncEnvironment();
     const url = tab?.url || '';
     const changed = state.tabId !== tab?.id || state.url !== url;
@@ -169,7 +172,7 @@ export default defineBackground(() => {
     tick();
     if (choice === 'pause') { await pause(); return; }
     if (choice === 'return') {
-      if (s.focusTabId !== null) await chrome.tabs.update(s.focusTabId, { active: true }).then(async t => { if (t.windowId) await chrome.windows.update(t.windowId, { focused: true }); }).catch(() => {});
+      if (s.focusTabId !== null) await chrome.tabs.update(s.focusTabId, { active: true }).then(async t => { if (t?.windowId) await chrome.windows.update(t.windowId, { focused: true }); }).catch(() => {});
     } else if (choice === 'relevant' || choice === 'ignore') {
       if (state.domain) s.feedback[state.domain] = choice === 'relevant' ? 'relevant' : 'ignored';
       if (choice === 'relevant') s.corrections++;

@@ -1,12 +1,35 @@
 import { test, expect, chromium, type BrowserContext, type Worker } from '@playwright/test';
-import { mkdtemp, rm, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, readFile, writeFile, cp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { extractPageContext } from '../../extension/lib/extractor';
 let context: BrowserContext; let worker: Worker; let id: string; let profile: string;
+let server: Server; let endpoint: string; const requests: any[] = [];
 test.beforeAll(async () => {
  profile = await mkdtemp(path.join(tmpdir(), 'fio-test-'));
- const extensionPath = path.resolve('extension/.output/chrome-mv3');
+ const original = path.resolve('extension/.output/chrome-mv3');
+ const manifest = JSON.parse(await readFile(path.join(original, 'manifest.json'), 'utf8'));
+ expect(manifest.host_permissions || []).toEqual([]);
+ expect(manifest.optional_host_permissions).toContain('https://*/*');
+ // Só a cópia de teste recebe origens pré-concedidas; o build distribuído continua opcional.
+ const extensionPath = path.join(profile, 'test-extension'); await cp(original, extensionPath, { recursive: true });
+ manifest.host_permissions = ['https://public.example.test/*', 'http://127.0.0.1/*'];
+ await writeFile(path.join(extensionPath, 'manifest.json'), JSON.stringify(manifest));
+ server = createServer(async (req, res) => {
+   res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+   res.setHeader('Access-Control-Allow-Headers', 'content-type,authorization');
+   if (req.method === 'OPTIONS') { res.writeHead(204).end(); return; }
+   let body = ''; for await (const chunk of req) body += chunk;
+   const data = JSON.parse(body); requests.push(data);
+   res.setHeader('Content-Type', 'application/json');
+   if (data.page.title.includes('Offline')) { res.writeHead(503).end('{}'); return; }
+   const relevant = data.page.title.includes('Pandas');
+   res.end(JSON.stringify({ label: relevant ? 'relevant' : 'off_topic', confidence: .95, reason: relevant ? 'Tutorial do tema.' : 'Conteúdo de entretenimento.' }));
+ });
+ await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+ endpoint = 'http://127.0.0.1:' + (server.address() as AddressInfo).port;
  context = await chromium.launchPersistentContext(profile, {
    channel: 'chromium', headless: false,
    args: ['--disable-extensions-except=' + extensionPath, '--load-extension=' + extensionPath]
@@ -14,7 +37,7 @@ test.beforeAll(async () => {
  worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
  id = new URL(worker.url()).host;
 });
-test.afterAll(async () => { await context?.close(); if (profile) await rm(profile, { recursive: true, force: true }); });
+test.afterAll(async () => { await context?.close(); await new Promise<void>(resolve => server?.close(() => resolve())); if (profile) await rm(profile, { recursive: true, force: true }); });
 test('sessão real: consentimento, início, pausa, retomada e limpeza do cache', async () => {
  const page = await context.newPage(); await page.goto('chrome-extension://' + id + '/popup.html');
  await expect(page.getByRole('button', { name: 'Iniciar sessão' })).toBeDisabled();
@@ -35,8 +58,8 @@ test('sessão real: consentimento, início, pausa, retomada e limpeza do cache',
 });
 test('sem permissão de origem: nenhuma extração ou chamada à API', async () => {
  const site = await context.newPage();
- await site.route('https://public.example.test/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Pandas</title><main><h1>DataFrame</h1><p>Limpeza de dados</p></main>' }));
- await site.goto('https://public.example.test/tutorial');
+ await site.route('https://unauthorized.example.test/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Pandas</title><main><h1>DataFrame</h1><p>Limpeza de dados</p></main>' }));
+ await site.goto('https://unauthorized.example.test/tutorial');
  const popup = await context.newPage(); await popup.goto('chrome-extension://' + id + '/popup.html');
  await popup.getByLabel('Tema e objetivo').fill('Estudar Pandas');
  await popup.getByRole('button', { name: 'Iniciar sessão' }).click();
@@ -63,4 +86,46 @@ test('configurações exibem privacidade e permitem navegação por teclado', as
  await expect(page.getByLabel('URL do projeto Supabase')).toBeFocused();
  await page.screenshot({ path: 'docs/screenshots/options.png', fullPage: true });
  await page.close();
+});
+
+test('ciclo completo com API simulada: mesmo domínio, cache, lembrete e correção humana', async () => {
+ requests.length = 0;
+ const site = await context.newPage();
+ await site.route('https://public.example.test/**', route => {
+   const title = route.request().url().includes('humor') ? 'Humor de gatos' : 'Tutorial Pandas';
+   return route.fulfill({ contentType: 'text/html', body: '<title>' + title + '</title><main><h1>' + title + '</h1><p>Conteúdo de demonstração público e controlado.</p></main>' });
+ });
+ await site.goto('https://public.example.test/tutorial');
+ const popup = await context.newPage(); await popup.goto('chrome-extension://' + id + '/popup.html');
+ await popup.evaluate(async ({ endpoint }) => {
+   const r = await chrome.runtime.sendMessage({ type: 'SAVE', preferences: { endpoint, delayMinutes: 0, stabilitySeconds: 3, notifications: false } });
+   if (!r.ok) throw new Error(r.error);
+ }, { endpoint });
+ await popup.getByLabel('Tema e objetivo').fill('Estudar Pandas e limpeza de dados');
+ await popup.getByLabel('Avisar após', { exact: true }).selectOption('0');
+ await popup.getByRole('button', { name: 'Iniciar sessão' }).click();
+ await expect(popup.getByRole('button', { name: 'Pausar', exact: true })).toBeVisible();
+ await site.bringToFront();
+ const state = () => worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime);
+ await expect.poll(async () => (await state()).classification?.label, { timeout: 15000 }).toBe('relevant');
+ expect(requests).toHaveLength(1);
+ expect(Object.keys(requests[0])).toEqual(['goal', 'topics', 'page']);
+ expect(requests[0].page.domain).toBe('public.example.test');
+ await site.goto('https://public.example.test/humor');
+ await expect.poll(async () => (await state()).classification?.label, { timeout: 15000 }).toBe('off_topic');
+ await expect(site.locator('#__fio_overlay')).toBeAttached();
+ expect(requests).toHaveLength(2);
+ await site.goto('https://public.example.test/tutorial');
+ await expect.poll(async () => (await state()).classification?.label, { timeout: 15000 }).toBe('relevant');
+ expect(requests).toHaveLength(2);
+ await site.goto('https://public.example.test/humor');
+ await expect.poll(async () => (await state()).classification?.label, { timeout: 15000 }).toBe('off_topic');
+ expect(requests).toHaveLength(2);
+ const response = await popup.evaluate(() => chrome.runtime.sendMessage({ type: 'FEEDBACK', choice: 'relevant' }));
+ expect(response.ok).toBe(true);
+ await expect.poll(async () => (await state()).classification?.label).toBe('relevant');
+ expect((await state()).session.feedback['public.example.test']).toBe('relevant');
+ await popup.bringToFront(); await popup.getByRole('button', { name: 'Encerrar sessão' }).click();
+ expect((await state()).cache).toEqual({});
+ await popup.close(); await site.close();
 });

@@ -47,7 +47,10 @@ export function installPageObserver() {
   if (w[marker]) return;
   w[marker] = true;
   let timer: ReturnType<typeof setTimeout>;
-  let previous = ''; let changedCharacters = 0;
+  const signatureNow = () => location.href + document.title + Array.from(document.querySelectorAll('main h1,main h2,article h1,article h2'))
+    .slice(0, 8).filter(el => !el.closest('[hidden],[aria-hidden="true"],[data-private],form,[contenteditable]') && getComputedStyle(el).display !== 'none')
+    .map(el => el.textContent?.slice(0, 100)).join('');
+  let previous = signatureNow(); let changedCharacters = 0;
   const observer = new MutationObserver(records => {
     for (const record of records) {
       const element = record.target.nodeType === Node.ELEMENT_NODE ? record.target as Element : record.target.parentElement;
@@ -57,13 +60,20 @@ export function installPageObserver() {
     }
     clearTimeout(timer);
     timer = setTimeout(() => {
-      const signature = location.href + document.title + Array.from(document.querySelectorAll('main h1,main h2,article h1,article h2'))
-        .slice(0, 8).map(el => el.textContent?.slice(0, 100)).join('');
+      const signature = signatureNow();
       if (signature !== previous || changedCharacters >= 80) {
         previous = signature; changedCharacters = 0;
         void chrome.runtime.sendMessage({ type: 'DIRTY' }).catch(() => observer.disconnect());
       }
     }, 1500);
   });
+  const stop = (message: { type?: string }, sender: chrome.runtime.MessageSender) => {
+    if (message.type === 'FIO_STOP' && sender.id === chrome.runtime.id) {
+      observer.disconnect(); clearTimeout(timer); delete w[marker];
+      chrome.runtime.onMessage.removeListener(stop);
+      document.getElementById('__fio_overlay')?.remove();
+    }
+  };
+  chrome.runtime.onMessage.addListener(stop);
   observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true, characterDataOldValue: true });
 }
