@@ -1,0 +1,30 @@
+{
+  "name": "fio-focus-ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "extension",
+    "worker"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "npm run dev -w extension",
+    "dev:worker": "npm run dev -w worker",
+    "prepare": "npm run prepare -w extension",
+    "typecheck": "npm run typecheck -w extension && npm run typecheck -w worker",
+    "test": "vitest run",
+    "build": "npm run build -w extension && npm run build -w worker",
+    "test:e2e": "playwright test",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@types/node": "^22.15.0",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4",
+    "jsdom": "^26.1.0"
+  }
+}

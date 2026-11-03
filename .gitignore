@@ -1,0 +1,15 @@
+node_modules/
+**/.output/
+**/.wxt/
+**/.wrangler/
+**/dist/
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+!.env.example
+!.dev.vars.example
+coverage/
+playwright-report/
+test-results/
+*.log

@@ -1,0 +1,8 @@
+# Copier para worker/.dev.vars (ignorado pelo Git). Somente teste local.
+OPENAI_API_KEY=replace-me
+AUTH_MODE=local
+ENABLED=true
+ALLOWED_ORIGINS=chrome-extension://COLE_O_ID_DA_EXTENSAO
+# Ajustar se a conta não tiver acesso a este identificador.
+OPENAI_MODEL=gpt-6-luna
+REASONING_EFFORT=low

@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@layer base {
+  body { @apply bg-cream text-ink font-sans m-0; }
+  label { @apply block text-sm font-medium; }
+  input:not([type=checkbox]), textarea, select { @apply block w-full mt-2 mb-4 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-ink; }
+  textarea { min-height: 76px; resize: vertical; }
+  button, a, input, select, textarea { outline-offset: 3px; }
+  :focus-visible { outline: 3px solid #1768ae; }
+  button:disabled { @apply opacity-50 cursor-wait; }
+  h1 { @apply text-2xl font-semibold tracking-tight mb-3; }
+  h2 { @apply text-lg font-semibold mb-3; }
+  p { @apply leading-relaxed; }
+  a { @apply text-leaf underline underline-offset-4; }
+}
+@layer components {
+ .button-primary { @apply bg-leaf text-white rounded-xl px-4 py-2.5 text-sm font-semibold border border-leaf hover:bg-ink; }
+ .button-secondary { @apply bg-white text-ink rounded-xl px-4 py-2.5 text-sm font-medium border border-stone-300 hover:bg-stone-100; }
+ .brand-mark { @apply flex items-center justify-center bg-leaf text-cream w-11 h-11 rounded-2xl text-4xl font-serif italic; }
+ .card { @apply bg-white border border-stone-200 rounded-2xl p-5 mb-5; }
+ .hint { @apply text-xs text-stone-600 leading-relaxed; }
+ .check { @apply flex items-start gap-2 mb-4 text-sm; }
+ .check input { margin-top: 4px; accent-color: #24644e; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }

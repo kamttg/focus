@@ -1,0 +1,50 @@
+name: Validate Fio
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit and API tests
+        run: npm test
+      - name: Build extension and validate Worker bundle
+        run: npm run build
+      - name: Install test browser
+        run: npx playwright install --with-deps chromium
+      - name: Chromium extension tests
+        run: xvfb-run --auto-servernum npm run test:e2e
+      - name: Check packaged client for server secret names
+        run: |
+          if rg -l 'OPENAI_API_KEY|service_role|sk-proj-' extension/.output/chrome-mv3; then
+            echo "Unexpected secret reference in extension bundle"
+            exit 1
+          fi
+      - name: Upload installable extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: fio-chrome-mv3
+          path: extension/.output/chrome-mv3/
+      - name: Upload screenshots and test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fio-validation
+          path: |
+            docs/screenshots/
+            playwright-report/
+            test-results/
+            package-lock.json

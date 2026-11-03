@@ -1,0 +1,32 @@
+{
+  "name": "fio-focus-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-10-28",
+  "vars": {
+    "AUTH_MODE": "jwt",
+    "OPENAI_MODEL": "gpt-6-luna",
+    "REASONING_EFFORT": "low",
+    "ENABLED": "false",
+    "DAILY_LIMIT": "100",
+    "MINUTE_LIMIT": "6",
+    "ALLOWED_ORIGINS": "",
+    "AUTH_ISSUER": "",
+    "AUTH_AUDIENCE": "authenticated"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "QUOTAS",
+        "class_name": "Quota"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "Quota"
+      ]
+    }
+  ]
+}
