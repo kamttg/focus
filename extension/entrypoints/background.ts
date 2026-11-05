@@ -263,6 +263,7 @@ export default defineBackground(() => {
           }
           next.endpoint = next.endpoint.replace(/\/$/, ''); next.authUrl = next.authUrl.replace(/\/$/, '');
           next.exclusions = next.exclusions.map((h: string) => h.trim().toLowerCase()).filter((h: string) => /^[a-z0-9.-]+$/.test(h)).slice(0, 100);
+          if (next.endpoint !== prefs.endpoint) { state.backoffUntil = 0; state.failures = 0; state.lastError = ''; }
           prefs = next; await chrome.storage.local.set({ preferences: prefs }); await observe(); return { ok: true };
         }
         case 'START': {

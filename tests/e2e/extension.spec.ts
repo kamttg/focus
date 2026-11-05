@@ -48,6 +48,8 @@ test.beforeEach(async ({}, info) => {
  const control = await context.newPage(); await control.goto('chrome-extension://' + id + '/options.html');
  const result = await control.evaluate(async ({ endpoint, consent }) => {
    await chrome.runtime.sendMessage({ type: 'FINISH' });
+   // Independent tests use a fresh connection; session changes alone must not clear backoff.
+   await chrome.runtime.sendMessage({ type: 'SAVE', preferences: { endpoint: 'http://127.0.0.1:1' } });
    return chrome.runtime.sendMessage({ type: 'SAVE', preferences: { endpoint, consent, delayMinutes: 0, cooldownMinutes: 10, stabilitySeconds: 3, notifications: false, overlay: true } });
  }, { endpoint, consent: !info.title.startsWith('sessão real:') });
  expect(result.ok).toBe(true); await control.close();
