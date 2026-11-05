@@ -1,3 +1,4 @@
+import { nextRetry, shouldRetryFailure } from '../lib/retry-policy';
 import { isTrustedUI } from '../lib/message-security';
 import { readBrowserEnvironment } from '../lib/browser-environment';
 import { probePageFocus } from '../lib/page-focus';
@@ -172,7 +173,7 @@ export default defineBackground(() => {
       state.status = 'analyzing'; await save();
       void pending.promise.then(result => run(() => accept(result, revision, key, 0))).catch(error => run(async () => {
         if (revision !== state.revision || !active()) return;
-        state.failures++; state.backoffUntil = Date.now() + Math.min(300_000, 30_000 * 2 ** Math.min(4, state.failures - 1));
+        // The original request owns failure accounting, even if focus changed.
         state.lastError = safeAnalysisError(error).message;
         await accept(uncertain(state.lastError), revision, '', 0, state.lastError);
       }));
@@ -182,7 +183,10 @@ export default defineBackground(() => {
     const usage = (await chrome.storage.local.get('usage')).usage as { day: string; count: number } | undefined;
     const count = usage?.day === day ? usage.count : 0;
     if (count >= prefs.dailyLimit || s.analyses >= prefs.sessionLimit || Date.now() < state.backoffUntil) {
-      state.classification = uncertain('Limite de análises ou pausa de rede. Tente novamente mais tarde.'); state.status = 'uncertain'; await save(); return;
+      const reason = Date.now() < state.backoffUntil
+        ? (state.lastError || 'Pausa de conexão.') + ' Nova tentativa em cerca de ' + Math.max(1, Math.ceil((state.backoffUntil - Date.now()) / 1000)) + ' segundos.'
+        : 'Limite local de análises atingido. Confira o limite diário e por sessão nas configurações.';
+      state.classification = uncertain(reason); state.status = 'uncertain'; await save(); return;
     }
     tick(); state.classification = null; state.status = 'analyzing'; state.lastError = ''; s.analyses++;
     await chrome.storage.local.set({ usage: { day, count: count + 1 } }); await save();
@@ -192,12 +196,17 @@ export default defineBackground(() => {
     const promise = classify(input.data, prefs, controller.signal);
     const flight = { promise, controller }; inFlight.set(flightKey, flight);
     void promise.then(result => run(async () => {
-      if (revision === state.revision) { state.failures = 0; state.backoffUntil = 0; }
+      if (controller.signal.aborted || state.session?.id !== s.id) return;
+      state.failures = 0; state.backoffUntil = 0;
+      // Cache paid-for results even if a popup or focus event changed revision.
+      state.cache = Object.fromEntries(Object.entries(state.cache).filter(([, value]) => value.expiresAt > Date.now()).slice(-99));
+      state.cache[key] = { result, expiresAt: Date.now() + 10 * 60_000 };
+      await save();
       await accept(result, revision, key, Date.now() - started);
     })).catch(error => run(async () => {
-      if (revision !== state.revision || !active()) return;
-      state.failures++; state.backoffUntil = Date.now() + Math.min(300_000, 30_000 * 2 ** Math.min(4, state.failures - 1));
-      state.lastError = safeAnalysisError(error).message;
+      if (controller.signal.aborted || state.session?.id !== s.id) return;
+      Object.assign(state, nextRetry(error, state.failures, Date.now()));
+      await save();
       await accept(uncertain(state.lastError), revision, '', Date.now() - started, state.lastError);
     })).finally(() => { if (inFlight.get(flightKey) === flight) inFlight.delete(flightKey); });
   }
@@ -263,7 +272,8 @@ export default defineBackground(() => {
           if (!['study', 'work', 'custom'].includes(message.kind)) throw new Error('Atividade inválida.');
           const duration = Number(message.duration);
           if (![0, 25, 50, 90].includes(duration)) throw new Error('Duração inválida.');
-          await finish(); state = initialState();
+          const retry = { backoffUntil: state.backoffUntil, failures: state.failures, lastError: state.lastError };
+          await finish(); state = { ...initialState(), ...retry };
           const tab = (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
           state.session = { id: crypto.randomUUID(), status: 'active', kind: message.kind, ...parsed, startedAt: Date.now(),
             endsAt: duration ? Date.now() + duration * 60_000 : null, pausedAt: null,
@@ -343,7 +353,7 @@ export default defineBackground(() => {
         state.clock.lastAt = Date.now(); await observe(); return;
       }
       tick(); await save(); await remind();
-      if (active() && state.status === 'uncertain' && Date.now() >= state.backoffUntil) await observe();
+      if (active() && shouldRetryFailure(state, Date.now())) await observe();
     });
   });
   chrome.notifications.onButtonClicked.addListener((id, index) => { if (id === 'fio-reminder') void run(() => feedback(index === 0 ? 'relevant' : 'snooze')); });

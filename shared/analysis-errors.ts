@@ -23,8 +23,16 @@ export function isAnalysisErrorCode(value: unknown): value is AnalysisErrorCode 
   return typeof value === 'string' && Object.hasOwn(analysisErrorMessages, value);
 }
 export class AnalysisError extends Error {
-  constructor(public readonly code: AnalysisErrorCode) { super(analysisErrorMessages[code]); this.name = 'AnalysisError'; }
+  constructor(public readonly code: AnalysisErrorCode, public readonly retryAfterMs = 0) { super(analysisErrorMessages[code]); this.name = 'AnalysisError'; }
 }
 export function safeAnalysisError(error: unknown, fallback: AnalysisErrorCode = 'backend_unavailable'): AnalysisError {
   return error instanceof AnalysisError ? error : new AnalysisError(fallback);
+}
+
+// Accept only bounded delays, never provider text or identifiers.
+export function retryAfterMilliseconds(value: string | null, now = Date.now()): number {
+  if (!value?.trim()) return 0;
+  const seconds = Number(value);
+  const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(value) - now;
+  return Number.isFinite(delay) ? Math.min(86_400_000, Math.max(0, delay)) : 0;
 }

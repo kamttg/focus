@@ -1,6 +1,6 @@
 import { classificationSchema, type ClassifyRequest } from '../../shared/contracts';
 import type { Preferences } from './session';
-import { AnalysisError, isAnalysisErrorCode } from '../../shared/analysis-errors';
+import { AnalysisError, isAnalysisErrorCode, retryAfterMilliseconds } from '../../shared/analysis-errors';
 export async function classify(input: ClassifyRequest, prefs: Preferences, signal?: AbortSignal) {
   const auth = (await chrome.storage.session.get('auth')).auth as { access_token: string; expires_at: number; refresh_token: string } | undefined;
   let token = auth?.access_token;
@@ -20,8 +20,8 @@ export async function classify(input: ClassifyRequest, prefs: Preferences, signa
     body: JSON.stringify(input)
   }).catch(() => { throw new AnalysisError('backend_unavailable'); });
   if (!r.ok) {
-    const body = await r.json().catch(() => null) as { error?: unknown } | null;
-    if (isAnalysisErrorCode(body?.error)) throw new AnalysisError(body.error);
+    const body = await r.json().catch(() => null) as { error?: unknown; retryAfterSeconds?: unknown } | null;
+    if (isAnalysisErrorCode(body?.error)) throw new AnalysisError(body.error, retryAfterMilliseconds(typeof body.retryAfterSeconds === 'number' ? String(body.retryAfterSeconds) : null));
     throw new AnalysisError(r.status === 403 ? 'origin_denied' : r.status === 401 ? 'unauthorized' : r.status === 429 ? 'quota_exceeded' : 'provider_unavailable');
   }
   const parsed = classificationSchema.safeParse(await r.json().catch(() => null));

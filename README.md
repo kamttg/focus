@@ -149,3 +149,9 @@ No runtime workerd, guardar fetch nativo como propriedade e chamar this.transpor
 Após npm run build, npm run test:worker-runtime executa o bundle em Miniflare/workerd, com Durable Object e SQLite reais e uma resposta OpenAI simulada na fronteira de rede. O teste verifica a saída estruturada e a cota, sem API key real nem tráfego externo. Reintroduzir o receiver antigo faz esse teste falhar com HTTP 502.
 
 Para aplicar apenas esta correção a uma instalação 0.2.0, atualize worker/src/openai.ts, worker/src/index.ts e shared/analysis-errors.ts e reinicie o Worker. Não é necessário reconstruir ou reinstalar a extensão; preserve worker/.dev.vars e seu ID atual.
+
+## Versão 0.2.1 — pausa de chamadas e respostas incertas
+
+Uma resposta uncertain válida é reaproveitada pelo cache e não provoca nova consulta automática no heartbeat. Resultados recebidos durante mudança de foco também entram no cache temporário da sessão. Erros 429 respeitam Retry-After (segundos ou data HTTP), com mínimo de um minuto; iniciar outra sessão não apaga essa espera. O popup exibe o tempo restante no diagnóstico e diferencia limite local de pausa após erro. O Worker distingue códigos de faturamento em code e type e transmite somente um prazo numérico, sem expor a mensagem bruta do provedor.
+
+Essas correções reduzem chamadas repetidas; não removem limites de conta nem fornecem créditos OpenAI. A validação automatizada usa IA simulada, incluindo respostas 429; a conta real precisa ser verificada na instalação do usuário.

@@ -54,3 +54,11 @@ it('o transporte padrão não chama fetch com o provedor como receiver', async (
  try { expect((await new OpenAIProvider(env).classify(input)).label).toBe('relevant'); }
  finally { vi.unstubAllGlobals(); }
 });
+it('preserva Retry-After do provedor sem expor a resposta bruta', async () => {
+ const transport = vi.fn().mockResolvedValue(Response.json({ error: { code: 'rate_limit_exceeded', message: 'PRIVADO' } }, { status: 429, headers: { 'Retry-After': '180' } }));
+ await expect(new OpenAIProvider(env, transport).classify(input)).rejects.toMatchObject({ code: 'provider_rate_limit', retryAfterMs: 180000 });
+});
+it('falta de crédito no campo type não é tratada como rajada temporária', async () => {
+ const transport = vi.fn().mockResolvedValue(Response.json({ error: { type: 'insufficient_quota' } }, { status: 429 }));
+ await expect(new OpenAIProvider(env, transport).classify(input)).rejects.toMatchObject({ code: 'provider_quota' });
+});

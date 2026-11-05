@@ -85,6 +85,7 @@ export default function App() {
       </details>
       <details className="mt-4 text-sm"><summary className="cursor-pointer underline">Diagnóstico da análise</summary>
         <dl className="hint mt-3 grid grid-cols-2 gap-2">
+          <dt>Próxima tentativa após erro</dt><dd>{snapshot.state.backoffUntil > Date.now() ? 'Em cerca de ' + Math.ceil((snapshot.state.backoffUntil - Date.now()) / 1000) + ' s' : 'Sem espera'}</dd>
           <dt>Tentativas nesta sessão</dt><dd>{s.analyses}</dd>
           <dt>Última resposta</dt><dd>{snapshot.state.lastAnalysisAt ? snapshot.state.lastLatencyMs + ' ms' : 'Ainda não recebida'}</dd>
           <dt>Foco informado pelo Chrome</dt><dd>{snapshot.state.focusSignals?.window ? 'Sim' : 'Não'}</dd>

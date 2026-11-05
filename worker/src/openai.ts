@@ -1,6 +1,6 @@
 import { classificationSchema, type Classification, type ClassifyRequest } from '../../shared/contracts';
 import type { Env } from './types';
-import { AnalysisError } from '../../shared/analysis-errors';
+import { AnalysisError, retryAfterMilliseconds } from '../../shared/analysis-errors';
 export interface AIProvider { classify(input: ClassifyRequest): Promise<Classification> }
 export const classifierInstructions = [
   'Você classifica relevância contextual; não mede atenção nem faz diagnósticos.',
@@ -47,11 +47,12 @@ export class OpenAIProvider implements AIProvider {
       throw new AnalysisError(name === 'TimeoutError' || name === 'AbortError' ? 'provider_timeout' : 'provider_unavailable');
     }
     if (!response.ok) {
-      const details = await response.json().catch(() => null) as { error?: { code?: string } } | null;
-      const quota = details?.error?.code === 'insufficient_quota';
+      const details = await response.json().catch(() => null) as { error?: { code?: string; type?: string } } | null;
+      const quota = [details?.error?.code, details?.error?.type].some(code => ['insufficient_quota', 'billing_hard_limit_reached', 'billing_not_active'].includes(code || ''));
+      const retryAfterMs = response.status === 429 ? Math.max(60_000, retryAfterMilliseconds(response.headers.get('Retry-After'))) : 0;
       throw new AnalysisError(response.status === 401 ? 'provider_auth' : response.status === 403 ? 'provider_access' :
         response.status === 404 ? 'provider_model' : response.status === 429 ? quota ? 'provider_quota' : 'provider_rate_limit' :
-        response.status === 400 ? 'provider_configuration' : 'provider_unavailable');
+        response.status === 400 ? 'provider_configuration' : 'provider_unavailable', retryAfterMs);
     }
     const data = await response.json().catch(() => { throw new AnalysisError('provider_invalid_response'); }) as {
       status?: string; output?: Array<{ type: string; content?: Array<{ type: string; text?: string }> }>

@@ -17,3 +17,7 @@ it('falha de rede explica que é preciso manter o Worker local aberto', async ()
  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('INFORMACAO_PRIVADA')));
  await expect(classify(input, defaults)).rejects.toMatchObject({ code: 'backend_unavailable' });
 });
+it('preserva a espera transmitida pelo Worker', async () => {
+ vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ error: 'provider_rate_limit', retryAfterSeconds: 180 }, { status: 502 })));
+ await expect(classify(input, defaults)).rejects.toMatchObject({ code: 'provider_rate_limit', retryAfterMs: 180000 });
+});

@@ -51,7 +51,7 @@ export default {
     } catch (error) {
       // Nunca logar payloads, exceções do provedor ou dados pessoais.
       const failure = safeAnalysisError(error, 'server_internal');
-      return reply({ ...uncertain(failure.message), error: failure.code }, 502);
+      return reply({ ...uncertain(failure.message), error: failure.code, retryAfterSeconds: Math.ceil(failure.retryAfterMs / 1000) }, 502);
     }
   }
 };

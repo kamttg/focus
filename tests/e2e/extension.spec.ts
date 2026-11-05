@@ -27,6 +27,8 @@ test.beforeAll(async () => {
    completedRequests++;
    res.setHeader('Content-Type', 'application/json');
    if (data.page.title.includes('Offline')) { res.writeHead(503).end('{}'); return; }
+   if (data.page.title.includes('Rate limit')) { res.writeHead(502).end(JSON.stringify({ error: 'provider_rate_limit', retryAfterSeconds: 120 })); return; }
+   if (data.page.title.includes('Ambiguo')) { res.end(JSON.stringify({ label: 'uncertain', confidence: .5, reason: 'Informação insuficiente.' })); return; }
    const relevant = data.page.title.includes('Pandas');
    res.end(JSON.stringify({ label: relevant ? 'relevant' : 'off_topic', confidence: .95, reason: relevant ? 'Tutorial do tema.' : 'Conteúdo de entretenimento.' }));
  });
@@ -372,4 +374,44 @@ test('remover acesso amplo interrompe análises mesmo quando uma origem ainda co
    await control.bringToFront(); await control.evaluate(() => chrome.runtime.sendMessage({ type: 'FINISH' }));
    await control.close(); await site.close();
  }
+});
+
+
+test('classificação incerta válida não repete IA no heartbeat', async () => {
+ test.setTimeout(60000);
+ const site = await context.newPage();
+ await site.route('https://public.example.test/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Ambiguo</title><main><p>Informação curta.</p></main>' }));
+ await site.goto('https://public.example.test/uncertain');
+ const control = await context.newPage(); await control.goto('chrome-extension://' + id + '/popup.html');
+ await control.evaluate(() => chrome.runtime.sendMessage({ type: 'START', kind: 'study', goal: 'Estudar Pandas', topics: [], duration: 0 }));
+ await site.bringToFront();
+ const state = () => worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime);
+ await expect.poll(async () => (await state()).classification?.label, { timeout: 15000 }).toBe('uncertain');
+ const count = requests.length;
+ await site.waitForTimeout(31000);
+ expect(requests.length).toBe(count);
+ await control.evaluate(() => chrome.runtime.sendMessage({ type: 'FINISH' }));
+ await control.close(); await site.close();
+});
+
+test('429 não é contornado por nova sessão, mudança de página ou tentativa manual', async () => {
+ const site = await context.newPage();
+ await site.route('https://public.example.test/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Rate limit</title><main><p>Página controlada.</p></main>' }));
+ await site.goto('https://public.example.test/rate');
+ const control = await context.newPage(); await control.goto('chrome-extension://' + id + '/popup.html');
+ const start = () => control.evaluate(() => chrome.runtime.sendMessage({ type: 'START', kind: 'study', goal: 'Estudar Pandas', topics: [], duration: 0 }));
+ await start(); await site.bringToFront();
+ const state = () => worker.evaluate(async () => (await chrome.storage.session.get('runtime')).runtime);
+ await expect.poll(async () => (await state()).lastError, { timeout: 15000 }).toContain('excesso de chamadas');
+ const count = requests.length; const until = (await state()).backoffUntil;
+ expect(until - Date.now()).toBeGreaterThan(110000);
+ await control.evaluate(() => chrome.runtime.sendMessage({ type: 'RETRY' }));
+ await control.evaluate(() => chrome.runtime.sendMessage({ type: 'FINISH' }));
+ await start(); await site.bringToFront();
+ await site.goto('https://public.example.test/another-rate');
+ await site.waitForTimeout(4000);
+ expect((await state()).backoffUntil).toBe(until);
+ expect(requests.length).toBe(count);
+ await control.evaluate(() => chrome.runtime.sendMessage({ type: 'FINISH' }));
+ await control.close(); await site.close();
 });
